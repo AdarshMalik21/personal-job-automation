@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.next/
+dist/
+logs/
+*.log
+*.tmp
+*.temp
+coverage/
+*.tsbuildinfo
+.DS_Store
