@@ -10,4 +10,8 @@ logs/
 *.temp
 coverage/
 *.tsbuildinfo
+shared/types/*.js
+shared/types/*.js.map
+shared/types/*.d.ts
+shared/types/*.d.ts.map
 .DS_Store

@@ -1,4 +1,4 @@
-import type { AuthSession } from "../../../shared/types/index.js";
+import type { AuthSession } from "@personal-job-automation/shared/types";
 
 declare global {
   namespace Express {

@@ -1,0 +1,11 @@
+{
+  "name": "@personal-job-automation/shared",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./types": {
+      "types": "./types/index.ts",
+      "default": "./types/index.ts"
+    }
+  }
+}

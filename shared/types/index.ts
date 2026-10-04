@@ -75,7 +75,6 @@ export type Job = {
     qualificationStatus?: string;
   };
   analysis?: Record<string, unknown>;
-  applicationStatus?: string;
 };
 
 export type ApplicationStatus =

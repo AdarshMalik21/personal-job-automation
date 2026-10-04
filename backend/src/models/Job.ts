@@ -26,7 +26,6 @@ const jobSchema = new Schema(
     deduplication: { type: Schema.Types.Mixed, default: {} },
     match: { type: Schema.Types.Mixed, default: {} },
     analysis: { type: Schema.Types.Mixed, default: {} },
-    applicationStatus: String,
   },
   { timestamps: true, strict: true },
 );
