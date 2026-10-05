@@ -74,6 +74,7 @@ export type CandidateProfile = {
 };
 
 export type JobStatus = "discovered" | "verified" | "archived" | "closed";
+export type JobReviewStatus = "unreviewed" | "reviewed" | "skipped";
 
 export type Job = {
   id?: string;
@@ -99,12 +100,24 @@ export type Job = {
   discoveredDate?: string;
   lastVerifiedDate?: string;
   status: JobStatus;
+  reviewStatus?: JobReviewStatus;
+  reviewedAt?: string;
   canonicalIdentity: CanonicalIdentity;
   deduplication?: Record<string, unknown>;
   match?: {
     score?: number;
+    matchScore?: number;
+    decision?: "APPLY" | "REVIEW" | "SKIP";
+    confidence?: "high" | "medium" | "low";
     reasoning?: string;
     qualificationStatus?: string;
+    roleAnalysis?: Record<string, unknown>;
+    experienceAnalysis?: Record<string, unknown>;
+    locationAnalysis?: Record<string, unknown>;
+    skillAnalysis?: Record<string, unknown>;
+    reasons?: string[];
+    hardFilterFailures?: string[];
+    scoreBreakdown?: Record<string, number>;
   };
   analysis?: Record<string, unknown>;
 };

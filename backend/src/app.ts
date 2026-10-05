@@ -6,6 +6,7 @@ import { requestLogger } from "./middleware/requestLogger.js";
 import { authRoutes } from "./routes/authRoutes.js";
 import { dashboardRoutes } from "./routes/dashboardRoutes.js";
 import { healthRoutes } from "./routes/healthRoutes.js";
+import { jobRoutes } from "./routes/jobRoutes.js";
 
 export const app = express();
 
@@ -15,6 +16,7 @@ app.use(requestLogger);
 app.use("/api", healthRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/jobs", jobRoutes);
 app.use((_request, response) => {
   response.status(404).json({ success: false, message: "Route not found" });
 });

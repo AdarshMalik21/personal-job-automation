@@ -32,6 +32,13 @@ const jobSchema = new Schema(
       enum: ["discovered", "verified", "archived", "closed"],
       default: "discovered",
     },
+    reviewStatus: {
+      type: String,
+      enum: ["unreviewed", "reviewed", "skipped"],
+      default: "unreviewed",
+      index: true,
+    },
+    reviewedAt: Date,
     canonicalIdentity: { type: Schema.Types.Mixed, required: true },
     deduplication: { type: Schema.Types.Mixed, default: {} },
     match: { type: Schema.Types.Mixed, default: {} },
