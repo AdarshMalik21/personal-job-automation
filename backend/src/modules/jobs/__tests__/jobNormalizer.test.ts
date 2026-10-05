@@ -19,14 +19,30 @@ const baseJob: RawJobInput = {
 
 describe("job normalization", () => {
   it("normalizes harmless title formatting differences", () => {
-    assert.equal(normalizeTitle("Full Stack Developer"), normalizeTitle("full-stack developer"));
-    assert.equal(normalizeTitle(" Full   Stack   Developer "), "full stack developer");
+    assert.equal(
+      normalizeTitle("Full Stack Developer"),
+      normalizeTitle("full-stack developer"),
+    );
+    assert.equal(
+      normalizeTitle(" Full   Stack   Developer "),
+      "full stack developer",
+    );
   });
 
   it("normalizes company suffixes without changing the display value", () => {
-    assert.equal(normalizeCompany("ABC Technologies Pvt. Ltd."), "abc technologies");
-    assert.equal(normalizeCompany("ABC Technologies Private Limited"), "abc technologies");
-    assert.equal(normalizeJob({ ...baseJob, company: "ABC Technologies Pvt. Ltd." }).company, "ABC Technologies Pvt. Ltd.");
+    assert.equal(
+      normalizeCompany("ABC Technologies Pvt. Ltd."),
+      "abc technologies",
+    );
+    assert.equal(
+      normalizeCompany("ABC Technologies Private Limited"),
+      "abc technologies",
+    );
+    assert.equal(
+      normalizeJob({ ...baseJob, company: "ABC Technologies Pvt. Ltd." })
+        .company,
+      "ABC Technologies Pvt. Ltd.",
+    );
   });
 
   it("normalizes remote statuses and preserves unknown values conservatively", () => {
@@ -39,18 +55,50 @@ describe("job normalization", () => {
 
   it("normalizes equivalent locations and known skill aliases", () => {
     assert.equal(normalizeLocation("Gurgaon"), normalizeLocation("Gurugram"));
+    assert.equal(normalizeSkill("C++"), "c++");
+    assert.equal(normalizeSkill("c plus plus"), "c++");
+    assert.equal(normalizeSkill("C#"), "c#");
+    assert.equal(normalizeSkill("c sharp"), "c#");
+    assert.equal(normalizeSkill(".NET"), ".net");
+    assert.equal(normalizeSkill("dotnet"), ".net");
+    assert.equal(normalizeSkill("Node.js"), "node.js");
     assert.equal(normalizeSkill("React.js"), normalizeSkill("ReactJS"));
+    assert.equal(normalizeSkill("node js"), "node.js");
     assert.equal(normalizeSkill("NodeJS"), "node.js");
+    assert.equal(normalizeSkill("Mongo DB"), "mongodb");
+    assert.equal(normalizeSkill("Type Script"), "typescript");
     assert.equal(normalizeSkill("Koa.js"), "koa.js");
+    assert.equal(normalizeSkill("JavaScript"), "javascript");
+    assert.equal(normalizeSkill("TypeScript"), "typescript");
+    assert.equal(normalizeSkill("MongoDB"), "mongodb");
+  });
+
+  it("normalizes skills without changing source values", () => {
+    const rawJob: RawJobInput = {
+      ...baseJob,
+      title: "C++ Developer",
+      requiredSkills: ["C++"],
+    };
+    const normalizedJob = normalizeJob(rawJob);
+
+    assert.deepEqual(normalizedJob.requiredSkills, ["c++"]);
+    assert.equal(rawJob.requiredSkills?.[0], "C++");
+    assert.equal(normalizedJob.title, "C++ Developer");
   });
 
   it("creates stable identity information without merging records", () => {
     const first = normalizeJob({ ...baseJob, title: "Full-stack Developer" });
-    const second = normalizeJob({ ...baseJob, title: " full stack developer " });
+    const second = normalizeJob({
+      ...baseJob,
+      title: " full stack developer ",
+    });
     const different = normalizeJob({ ...baseJob, title: "Backend Developer" });
 
     assert.equal(first.canonicalIdentity.key, second.canonicalIdentity.key);
-    assert.notEqual(first.canonicalIdentity.key, different.canonicalIdentity.key);
+    assert.notEqual(
+      first.canonicalIdentity.key,
+      different.canonicalIdentity.key,
+    );
     assert.equal(first.canonicalIdentity.confidence, "probable");
   });
 
@@ -68,8 +116,17 @@ describe("job normalization", () => {
 
 describe("raw job validation", () => {
   it("rejects unsupported sources and missing required fields", () => {
-    assert.throws(() => validateRawJobInput({ ...baseJob, source: "unknown" }), /unsupported/);
-    assert.throws(() => validateRawJobInput({ ...baseJob, title: " " }), /title is required/);
-    assert.throws(() => validateRawJobInput({ ...baseJob, requiredSkills: ["React", 4] }), /requiredSkills/);
+    assert.throws(
+      () => validateRawJobInput({ ...baseJob, source: "unknown" }),
+      /unsupported/,
+    );
+    assert.throws(
+      () => validateRawJobInput({ ...baseJob, title: " " }),
+      /title is required/,
+    );
+    assert.throws(
+      () => validateRawJobInput({ ...baseJob, requiredSkills: ["React", 4] }),
+      /requiredSkills/,
+    );
   });
 });
