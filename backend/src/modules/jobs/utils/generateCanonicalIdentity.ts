@@ -24,7 +24,9 @@ export const generateCanonicalIdentity = (
   const components = {
     normalizedCompany: input.normalizedCompany,
     normalizedTitle: input.normalizedTitle,
-    ...(input.normalizedLocation ? { normalizedLocation: input.normalizedLocation } : {}),
+    ...(input.normalizedLocation
+      ? { normalizedLocation: input.normalizedLocation }
+      : {}),
     ...(input.normalizedEmploymentType
       ? { normalizedEmploymentType: input.normalizedEmploymentType }
       : {}),
@@ -47,7 +49,11 @@ export const generateCanonicalIdentity = (
     key: crossSourceKey,
     ...(strongKey ? { strongKey } : {}),
     crossSourceKey,
-    confidence: strongKey ? "strong" : input.normalizedLocation ? "probable" : "weak",
+    confidence: strongKey
+      ? "strong"
+      : input.normalizedLocation
+        ? "probable"
+        : "weak",
     components,
   };
 };

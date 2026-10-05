@@ -10,7 +10,10 @@ const jobSchema = new Schema(
     description: String,
     location: String,
     normalizedLocation: String,
-    remoteStatus: { type: String, enum: ["remote", "hybrid", "onsite", "any", "unknown"] },
+    remoteStatus: {
+      type: String,
+      enum: ["remote", "hybrid", "onsite", "any", "unknown"],
+    },
     employmentType: String,
     experienceRequirement: String,
     requiredSkills: { type: [String], default: [] },

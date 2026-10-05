@@ -1,4 +1,8 @@
-import type { CanonicalIdentity, Job, JobSource } from "@personal-job-automation/shared/types";
+import type {
+  CanonicalIdentity,
+  Job,
+  JobSource,
+} from "@personal-job-automation/shared/types";
 
 export type CanonicalJob = Job;
 

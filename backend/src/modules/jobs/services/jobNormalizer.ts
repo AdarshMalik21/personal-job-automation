@@ -9,7 +9,9 @@ import { normalizeSkills } from "../utils/normalizeSkills.js";
 import { normalizeTitle } from "../utils/normalizeTitle.js";
 import { normalizeText, optionalText } from "../utils/text.js";
 
-const normalizeDate = (value: string | Date | undefined): string | undefined => {
+const normalizeDate = (
+  value: string | Date | undefined,
+): string | undefined => {
   if (value === undefined) return undefined;
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();

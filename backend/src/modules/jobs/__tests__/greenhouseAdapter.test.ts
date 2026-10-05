@@ -11,8 +11,13 @@ import { normalizeJob } from "../services/jobNormalizer.js";
 const response = (body: unknown, ok = true, status = 200): Response =>
   ({ ok, status, json: async () => body }) as Response;
 
-const createFetcher = (overrides: Record<string, Response> = {}): FetchLike =>
-  async (url) => overrides[url] ?? response(url.includes("/jobs?") ? greenhouseJobsResponse : greenhouseBoardResponse);
+const createFetcher =
+  (overrides: Record<string, Response> = {}): FetchLike =>
+  async (url) =>
+    overrides[url] ??
+    response(
+      url.includes("/jobs?") ? greenhouseJobsResponse : greenhouseBoardResponse,
+    );
 
 describe("GreenhouseAdapter", () => {
   it("maps Greenhouse jobs to RawJobInput", async () => {
@@ -30,7 +35,10 @@ describe("GreenhouseAdapter", () => {
     assert.equal(job?.title, "Senior Full Stack Developer");
     assert.equal(job?.company, "Example Technologies");
     assert.equal(job?.location, "Noida, Uttar Pradesh, India");
-    assert.equal(job?.officialApplicationUrl, "https://boards.greenhouse.io/example/jobs/12345");
+    assert.equal(
+      job?.officialApplicationUrl,
+      "https://boards.greenhouse.io/example/jobs/12345",
+    );
     assert.equal(job?.sourceUrl, job?.officialApplicationUrl);
     assert.match(job?.description ?? "", /Build reliable/);
     assert.equal(job?.postedDate, "2026-09-15T10:00:00Z");
@@ -43,9 +51,10 @@ describe("GreenhouseAdapter", () => {
       boardToken: "example",
       companyName: "Configured Company",
       fetcher: createFetcher({
-        "https://boards-api.greenhouse.io/v1/boards/example/jobs?content=true": response({
-          jobs: [{ id: 99, title: "Engineer" }],
-        }),
+        "https://boards-api.greenhouse.io/v1/boards/example/jobs?content=true":
+          response({
+            jobs: [{ id: 99, title: "Engineer" }],
+          }),
       }),
     });
 
@@ -61,7 +70,11 @@ describe("GreenhouseAdapter", () => {
     const httpFailure = new GreenhouseAdapter({
       boardToken: "example",
       fetcher: createFetcher({
-        "https://boards-api.greenhouse.io/v1/boards/example": response({}, false, 503),
+        "https://boards-api.greenhouse.io/v1/boards/example": response(
+          {},
+          false,
+          503,
+        ),
       }),
     });
     await assert.rejects(() => httpFailure.fetchJobs(), /HTTP 503/);
@@ -69,7 +82,8 @@ describe("GreenhouseAdapter", () => {
     const malformed = new GreenhouseAdapter({
       boardToken: "example",
       fetcher: createFetcher({
-        "https://boards-api.greenhouse.io/v1/boards/example/jobs?content=true": response({ jobs: [{ id: "bad" }] }),
+        "https://boards-api.greenhouse.io/v1/boards/example/jobs?content=true":
+          response({ jobs: [{ id: "bad" }] }),
       }),
     });
     await assert.rejects(() => malformed.fetchJobs(), /invalid job/);
