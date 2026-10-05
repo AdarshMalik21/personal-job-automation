@@ -57,7 +57,11 @@ export type DashboardJob = Job & {
   applicationStatus: string;
   reviewStatus?: "unreviewed" | "reviewed" | "skipped";
   match: JobMatchView;
-  freshness?: { status: "fresh" | "stale" | "unknown"; reason: string; date?: string };
+  freshness?: {
+    status: "fresh" | "stale" | "unknown";
+    reason: string;
+    date?: string;
+  };
   openStatus?: "open" | "closed" | "unknown";
 };
 
@@ -77,7 +81,12 @@ export type JobStats = {
 
 export type JobListResult = {
   jobs: DashboardJob[];
-  pagination: { page: number; limit: number; total: number; totalPages: number };
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 };
 
 export type JobListParams = {
@@ -120,7 +129,10 @@ export const getJobs = (token: string, params: JobListParams = {}) => {
 };
 
 export const getJob = (token: string, id: string) =>
-  request<{ job: DashboardJob }>(`/jobs/${encodeURIComponent(id)}`, withToken(token));
+  request<{ job: DashboardJob }>(
+    `/jobs/${encodeURIComponent(id)}`,
+    withToken(token),
+  );
 
 export const markJobReviewed = (token: string, id: string) =>
   request<{ job: DashboardJob }>(`/jobs/${encodeURIComponent(id)}/review`, {
