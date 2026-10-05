@@ -42,6 +42,7 @@ describe("GreenhouseAdapter", () => {
     assert.equal(job?.sourceUrl, job?.officialApplicationUrl);
     assert.match(job?.description ?? "", /Build reliable/);
     assert.equal(job?.postedDate, "2026-09-15T10:00:00Z");
+    assert.equal(job?.updatedDate, "2026-10-01T10:00:00Z");
     assert.equal(job?.remoteStatus, undefined);
     assert.equal(job?.requiredSkills, undefined);
   });

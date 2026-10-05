@@ -24,6 +24,7 @@ const jobSchema = new Schema(
     officialApplicationUrl: String,
     externalJobId: String,
     postedDate: Date,
+    updatedDate: Date,
     discoveredDate: { type: Date, default: Date.now },
     lastVerifiedDate: Date,
     status: {

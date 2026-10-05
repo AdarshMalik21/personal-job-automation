@@ -16,4 +16,5 @@ export type RawJobInput = {
   sourceUrl?: string;
   officialApplicationUrl?: string;
   postedDate?: string | Date;
+  updatedDate?: string | Date;
 };

@@ -95,6 +95,7 @@ export type Job = {
   officialApplicationUrl?: string;
   externalJobId?: string;
   postedDate?: string;
+  updatedDate?: string;
   discoveredDate?: string;
   lastVerifiedDate?: string;
   status: JobStatus;

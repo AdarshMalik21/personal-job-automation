@@ -38,6 +38,7 @@ export const normalizeJob = (rawJob: RawJobInput): Job => {
   };
   const canonicalIdentity = generateCanonicalIdentity(identityInput);
   const postedDate = normalizeDate(rawJob.postedDate);
+  const updatedDate = normalizeDate(rawJob.updatedDate);
   const description = optionalText(rawJob.description);
   const location = optionalText(rawJob.location);
   const employmentType = optionalText(rawJob.employmentType);
@@ -63,6 +64,7 @@ export const normalizeJob = (rawJob: RawJobInput): Job => {
     ...(officialApplicationUrl ? { officialApplicationUrl } : {}),
     ...(externalJobId ? { externalJobId } : {}),
     ...(postedDate ? { postedDate } : {}),
+    ...(updatedDate ? { updatedDate } : {}),
     discoveredDate: new Date().toISOString(),
     status: "discovered",
     canonicalIdentity,

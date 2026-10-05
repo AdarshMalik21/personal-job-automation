@@ -55,4 +55,5 @@ export const mapGreenhouseJob = (
       }
     : {}),
   ...(job.first_published ? { postedDate: job.first_published } : {}),
+  ...(job.updated_at ? { updatedDate: job.updated_at } : {}),
 });
