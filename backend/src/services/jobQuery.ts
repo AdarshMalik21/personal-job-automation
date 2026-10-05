@@ -1,5 +1,6 @@
 import type { FilterQuery } from "mongoose";
 import type { JobDocument } from "../models/Job.js";
+import { DEFAULT_FRESH_WITHIN_DAYS } from "../modules/jobs/services/freshness.js";
 
 export type JobListQuery = {
   page: number;
@@ -10,6 +11,7 @@ export type JobListQuery = {
   reviewStatus?: "unreviewed" | "reviewed" | "skipped";
   remoteStatus?: string;
   location?: string;
+  freshness?: "fresh" | "stale" | "unknown";
   minScore?: number;
   maxScore?: number;
   sort: Record<string, 1 | -1>;
@@ -17,6 +19,7 @@ export type JobListQuery = {
 
 const decisions = new Set(["APPLY", "REVIEW", "SKIP"]);
 const reviewStatuses = new Set(["unreviewed", "reviewed", "skipped"]);
+const freshnessStatuses = new Set(["fresh", "stale", "unknown"]);
 const sortFields: Record<string, Record<string, 1 | -1>> = {
   score: { "match.matchScore": -1, "match.score": -1, postedDate: -1 },
   newest: { postedDate: -1, discoveredDate: -1 },
@@ -48,14 +51,17 @@ export const parseJobListQuery = (input: Record<string, unknown>): JobListQuery 
   const status = value(input.status);
   const remoteStatus = value(input.remoteStatus);
   const location = value(input.location);
+  const freshness = value(input.freshness);
   const minScore = numberValue(input.minScore, "minScore");
   const maxScore = numberValue(input.maxScore, "maxScore");
   const sortBy = value(input.sortBy) ?? "score";
   const sortOrder = value(input.sortOrder) === "asc" ? 1 : -1;
   if (decision && !decisions.has(decision)) throw new Error("decision is invalid");
   if (reviewStatus && !reviewStatuses.has(reviewStatus)) throw new Error("reviewStatus is invalid");
+  if (freshness && !freshnessStatuses.has(freshness)) throw new Error("freshness is invalid");
   const parsedDecision = decision as Exclude<JobListQuery["decision"], undefined> | undefined;
   const parsedReviewStatus = reviewStatus as Exclude<JobListQuery["reviewStatus"], undefined> | undefined;
+  const parsedFreshness = freshness as Exclude<JobListQuery["freshness"], undefined> | undefined;
   if (!sortFields[sortBy]) throw new Error("sortBy is invalid");
   return {
     page,
@@ -66,10 +72,43 @@ export const parseJobListQuery = (input: Record<string, unknown>): JobListQuery 
     ...(parsedReviewStatus ? { reviewStatus: parsedReviewStatus } : {}),
     ...(remoteStatus ? { remoteStatus } : {}),
     ...(location ? { location } : {}),
+    ...(parsedFreshness ? { freshness: parsedFreshness } : {}),
     ...(minScore !== undefined ? { minScore } : {}),
     ...(maxScore !== undefined ? { maxScore } : {}),
     sort: Object.fromEntries(Object.entries(sortFields[sortBy]).map(([field, direction]) => [field, (direction * sortOrder) as 1 | -1])),
   };
+};
+
+export const buildFreshnessFilter = (
+  freshness: NonNullable<JobListQuery["freshness"]>,
+  now = new Date(),
+): FilterQuery<JobDocument> => {
+  const cutoff = new Date(
+    now.getTime() - DEFAULT_FRESH_WITHIN_DAYS * 24 * 60 * 60 * 1000,
+  );
+  const missingUpdatedDate = {
+    $or: [{ updatedDate: { $exists: false } }, { updatedDate: null }],
+  };
+  const missingPostedDate = {
+    $or: [{ postedDate: { $exists: false } }, { postedDate: null }],
+  };
+  if (freshness === "fresh") {
+    return {
+      $or: [
+        { updatedDate: { $gte: cutoff } },
+        { $and: [missingUpdatedDate, { postedDate: { $gte: cutoff } }] },
+      ],
+    };
+  }
+  if (freshness === "stale") {
+    return {
+      $or: [
+        { updatedDate: { $lt: cutoff } },
+        { $and: [missingUpdatedDate, { postedDate: { $lt: cutoff } }] },
+      ],
+    };
+  }
+  return { $and: [missingUpdatedDate, missingPostedDate] };
 };
 
 const escapeRegex = (input: string): string => input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -82,6 +121,7 @@ export const buildJobFilter = (query: JobListQuery): FilterQuery<JobDocument> =>
   if (query.reviewStatus) and.push({ reviewStatus: query.reviewStatus });
   if (query.remoteStatus) and.push({ remoteStatus: query.remoteStatus });
   if (query.location) and.push({ $or: [{ location: new RegExp(escapeRegex(query.location), "i") }, { normalizedLocation: new RegExp(escapeRegex(query.location), "i") }] });
+  if (query.freshness) and.push(buildFreshnessFilter(query.freshness));
   if (query.search) {
     const search = new RegExp(escapeRegex(query.search), "i");
     and.push({ $or: [{ title: search }, { company: search }, { description: search }, { location: search }, { requiredSkills: search }, { preferredSkills: search }] });

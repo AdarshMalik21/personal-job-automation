@@ -11,6 +11,8 @@ export type FreshnessOptions = {
   freshWithinDays?: number;
 };
 
+export const DEFAULT_FRESH_WITHIN_DAYS = 30;
+
 const parseDate = (value: string | Date | undefined): Date | undefined => {
   if (value === undefined) return undefined;
   const date = value instanceof Date ? value : new Date(value);
@@ -27,7 +29,7 @@ export const evaluateFreshness = (
   }
 
   const now = options.now ?? new Date();
-  const freshWithinDays = options.freshWithinDays ?? 30;
+  const freshWithinDays = options.freshWithinDays ?? DEFAULT_FRESH_WITHIN_DAYS;
   if (!Number.isFinite(freshWithinDays) || freshWithinDays < 0) {
     throw new Error("freshWithinDays must be a non-negative finite number");
   }

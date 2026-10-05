@@ -87,6 +87,7 @@ export type JobListParams = {
   decision?: string;
   remoteStatus?: string;
   location?: string;
+  freshness?: string;
   minScore?: string;
   reviewStatus?: string;
   sortBy?: string;
