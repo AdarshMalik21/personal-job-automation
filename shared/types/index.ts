@@ -7,6 +7,32 @@ export type ApiResponse<T> = {
 
 export type RemotePreference = "remote" | "hybrid" | "onsite" | "any";
 
+export type JobSource =
+  | "company"
+  | "greenhouse"
+  | "lever"
+  | "ashby"
+  | "linkedin"
+  | "naukri"
+  | "indeed"
+  | "wellfound"
+  | "other";
+export type RemoteStatus = RemotePreference | "unknown";
+export type IdentityConfidence = "strong" | "probable" | "weak" | "unknown";
+
+export type CanonicalIdentity = {
+  key: string;
+  strongKey?: string;
+  crossSourceKey: string;
+  confidence: IdentityConfidence;
+  components: {
+    normalizedCompany: string;
+    normalizedTitle: string;
+    normalizedLocation?: string;
+    normalizedEmploymentType?: string;
+  };
+};
+
 export type CandidateProfile = {
   id?: string;
   isActive: boolean;
@@ -52,15 +78,19 @@ export type JobStatus = "discovered" | "verified" | "archived" | "closed";
 export type Job = {
   id?: string;
   title: string;
+  normalizedTitle: string;
   company: string;
+  normalizedCompany: string;
   description?: string;
   location?: string;
-  remoteStatus?: RemotePreference;
+  normalizedLocation?: string;
+  remoteStatus?: RemoteStatus;
+  employmentType?: string;
   experienceRequirement?: string;
   requiredSkills: string[];
   preferredSkills: string[];
   relatedSkills: string[];
-  source: string;
+  source: JobSource;
   sourceUrl?: string;
   officialApplicationUrl?: string;
   externalJobId?: string;
@@ -68,6 +98,7 @@ export type Job = {
   discoveredDate?: string;
   lastVerifiedDate?: string;
   status: JobStatus;
+  canonicalIdentity: CanonicalIdentity;
   deduplication?: Record<string, unknown>;
   match?: {
     score?: number;

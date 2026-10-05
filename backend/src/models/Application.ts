@@ -38,9 +38,6 @@ const applicationSchema = new Schema(
   { timestamps: true, strict: true },
 );
 
-applicationSchema.index(
-  { jobId: 1, candidateProfileId: 1 },
-  { unique: true },
-);
+applicationSchema.index({ jobId: 1, candidateProfileId: 1 }, { unique: true });
 export type ApplicationDocument = InferSchemaType<typeof applicationSchema>;
 export const ApplicationModel = model("Application", applicationSchema);

@@ -1,17 +1,22 @@
 import { Schema, model, type InferSchemaType } from "mongoose";
+import { SUPPORTED_JOB_SOURCES } from "../modules/jobs/types/jobSource.js";
 
 const jobSchema = new Schema(
   {
     title: { type: String, required: true, trim: true },
+    normalizedTitle: { type: String, required: true, trim: true },
     company: { type: String, required: true, trim: true },
+    normalizedCompany: { type: String, required: true, trim: true },
     description: String,
     location: String,
-    remoteStatus: { type: String, enum: ["remote", "hybrid", "onsite", "any"] },
+    normalizedLocation: String,
+    remoteStatus: { type: String, enum: ["remote", "hybrid", "onsite", "any", "unknown"] },
+    employmentType: String,
     experienceRequirement: String,
     requiredSkills: { type: [String], default: [] },
     preferredSkills: { type: [String], default: [] },
     relatedSkills: { type: [String], default: [] },
-    source: { type: String, required: true },
+    source: { type: String, required: true, enum: SUPPORTED_JOB_SOURCES },
     sourceUrl: String,
     officialApplicationUrl: String,
     externalJobId: String,
@@ -23,6 +28,7 @@ const jobSchema = new Schema(
       enum: ["discovered", "verified", "archived", "closed"],
       default: "discovered",
     },
+    canonicalIdentity: { type: Schema.Types.Mixed, required: true },
     deduplication: { type: Schema.Types.Mixed, default: {} },
     match: { type: Schema.Types.Mixed, default: {} },
     analysis: { type: Schema.Types.Mixed, default: {} },

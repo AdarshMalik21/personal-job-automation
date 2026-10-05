@@ -16,7 +16,7 @@ Included:
 Deferred to later phases:
 
 - Job source integrations and scraping
-- Normalization, deduplication, freshness, and matching
+- Cross-source deduplication, freshness, and matching
 - LLM analysis and resume tailoring
 - Browser automation and job-site credentials
 - Application submission workflow

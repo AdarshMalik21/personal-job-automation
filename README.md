@@ -71,4 +71,4 @@ The login and dashboard routes are available at `/login` and `/dashboard`. Dashb
 
 ## Phase boundary
 
-This phase intentionally does not include scraping, job matching, LLM processing, resume tailoring, browser automation, credential storage for job sites, application submission, queues, or caching behavior.
+Phase 1 intentionally does not include scraping, job matching, LLM processing, resume tailoring, browser automation, credential storage for job sites, application submission, queues, or caching behavior. Phase 2A adds only the offline canonical job foundation: raw input validation, deterministic normalization, and identity preparation. Source integrations, deduplication decisions, freshness, filtering, analysis, matching, ranking, and automation remain deferred.

@@ -1,4 +1,7 @@
-import type { ApiResponse, AuthSession } from "@personal-job-automation/shared/types";
+import type {
+  ApiResponse,
+  AuthSession,
+} from "@personal-job-automation/shared/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api";
 

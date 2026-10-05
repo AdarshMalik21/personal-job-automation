@@ -18,6 +18,10 @@ MongoDB and Redis connections are initialized during API startup. Connection err
 
 All API responses use a `success` flag and an optional `message` or `data` payload. Unknown routes return `404`. The centralized error handler logs the error message and hides unexpected server details when `NODE_ENV=production`.
 
+## Canonical job foundation
+
+Future source adapters will provide `RawJobInput`. A deterministic normalizer preserves source values for display, derives comparable title, company, location, remote-status, and skill values, and creates a canonical identity key. A canonical identity is comparison evidence, not a deduplication decision; cross-source merging, freshness, filtering, analysis, matching, ranking, and automation remain deferred.
+
 ## Frontend boundary
 
 The Next.js frontend owns the login and dashboard presentation. It stores the temporary JWT in browser local storage for this personal MVP and sends it as a Bearer token to protected endpoints. A later security phase can replace this with an HTTP-only session cookie without changing the domain models.
