@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Job } from "@personal-job-automation/shared/types";
 import type { JobSourceAdapter } from "../adapters/JobSourceAdapter.js";
-import { deriveOpenStatus, validateApplicationUrl } from "../services/applicationStatus.js";
+import {
+  deriveOpenStatus,
+  validateApplicationUrl,
+} from "../services/applicationStatus.js";
 import { deduplicateJobs } from "../services/deduplicateJobs.js";
 import { evaluateFreshness } from "../services/freshness.js";
 import { JobSourceOrchestrator } from "../services/jobIngestionOrchestrator.js";
@@ -44,21 +47,36 @@ const canonical = (input: RawJobInput): Job => normalizeJob(input);
 describe("freshness", () => {
   it("distinguishes fresh, stale, boundary, and unknown dates", () => {
     assert.equal(
-      evaluateFreshness({ postedDate: "2026-10-01T00:00:00Z" }, { now, freshWithinDays: 30 }).status,
+      evaluateFreshness(
+        { postedDate: "2026-10-01T00:00:00Z" },
+        { now, freshWithinDays: 30 },
+      ).status,
       "fresh",
     );
     assert.equal(
-      evaluateFreshness({ postedDate: "2026-08-01T00:00:00Z" }, { now, freshWithinDays: 30 }).status,
+      evaluateFreshness(
+        { postedDate: "2026-08-01T00:00:00Z" },
+        { now, freshWithinDays: 30 },
+      ).status,
       "stale",
     );
     assert.equal(
-      evaluateFreshness({ postedDate: "2026-09-05T00:00:00Z" }, { now, freshWithinDays: 30 }).status,
+      evaluateFreshness(
+        { postedDate: "2026-09-05T00:00:00Z" },
+        { now, freshWithinDays: 30 },
+      ).status,
       "fresh",
     );
-    assert.equal(evaluateFreshness({ postedDate: "invalid" }, { now }).status, "unknown");
+    assert.equal(
+      evaluateFreshness({ postedDate: "invalid" }, { now }).status,
+      "unknown",
+    );
     assert.equal(evaluateFreshness({}, { now }).status, "unknown");
     assert.equal(
-      evaluateFreshness({ postedDate: "2026-01-01", updatedDate: "2026-10-01" }, { now }).status,
+      evaluateFreshness(
+        { postedDate: "2026-01-01", updatedDate: "2026-10-01" },
+        { now },
+      ).status,
       "fresh",
     );
   });
@@ -67,12 +85,20 @@ describe("freshness", () => {
 describe("deduplicateJobs", () => {
   it("deduplicates canonical matches and prefers the richer representation", () => {
     const result = deduplicateJobs([
-      canonical(rawJob({ source: "company", externalJobId: "one", description: "short" })),
-      canonical(rawJob({
-        source: "greenhouse",
-        externalJobId: "two",
-        description: "A much more complete description for this same role.",
-      })),
+      canonical(
+        rawJob({
+          source: "company",
+          externalJobId: "one",
+          description: "short",
+        }),
+      ),
+      canonical(
+        rawJob({
+          source: "greenhouse",
+          externalJobId: "two",
+          description: "A much more complete description for this same role.",
+        }),
+      ),
     ]);
     assert.equal(result.jobs.length, 1);
     assert.equal(result.duplicatesRemoved, 1);
@@ -82,14 +108,37 @@ describe("deduplicateJobs", () => {
 
   it("uses shared official URLs and strong IDs but keeps uncertain jobs separate", () => {
     const sameUrl = deduplicateJobs([
-      canonical(rawJob({ externalJobId: "one", officialApplicationUrl: "https://jobs.test/same" })),
-      canonical(rawJob({ source: "greenhouse", externalJobId: "two", officialApplicationUrl: "https://jobs.test/same" })),
+      canonical(
+        rawJob({
+          externalJobId: "one",
+          officialApplicationUrl: "https://jobs.test/same",
+        }),
+      ),
+      canonical(
+        rawJob({
+          source: "greenhouse",
+          externalJobId: "two",
+          officialApplicationUrl: "https://jobs.test/same",
+        }),
+      ),
     ]);
     assert.equal(sameUrl.jobs.length, 1);
 
     const sameTitleDifferentCompany = deduplicateJobs([
-      canonical(rawJob({ company: "Acme", externalJobId: "acme-1", officialApplicationUrl: "https://jobs.test/acme" })),
-      canonical(rawJob({ company: "Other Company", externalJobId: "other-1", officialApplicationUrl: "https://jobs.test/other" })),
+      canonical(
+        rawJob({
+          company: "Acme",
+          externalJobId: "acme-1",
+          officialApplicationUrl: "https://jobs.test/acme",
+        }),
+      ),
+      canonical(
+        rawJob({
+          company: "Other Company",
+          externalJobId: "other-1",
+          officialApplicationUrl: "https://jobs.test/other",
+        }),
+      ),
     ]);
     assert.equal(sameTitleDifferentCompany.jobs.length, 2);
 
@@ -113,19 +162,33 @@ describe("application URL validation", () => {
       assert.equal(init?.method, "HEAD");
       return { status: 200 } as Response;
     };
-    assert.equal((await validateApplicationUrl("https://jobs.test/open", { fetcher })).status, "reachable");
     assert.equal(
-      (await validateApplicationUrl("https://jobs.test/missing", { fetcher: async () => ({ status: 404 } as Response) })).status,
+      (await validateApplicationUrl("https://jobs.test/open", { fetcher }))
+        .status,
+      "reachable",
+    );
+    assert.equal(
+      (
+        await validateApplicationUrl("https://jobs.test/missing", {
+          fetcher: async () => ({ status: 404 }) as Response,
+        })
+      ).status,
       "unreachable",
     );
     assert.equal(
-      (await validateApplicationUrl("https://jobs.test/gone", { fetcher: async () => ({ status: 410 } as Response) })).status,
+      (
+        await validateApplicationUrl("https://jobs.test/gone", {
+          fetcher: async () => ({ status: 410 }) as Response,
+        })
+      ).status,
       "unreachable",
     );
     const invalid = await validateApplicationUrl("not-a-url", { fetcher });
     assert.equal(invalid.status, "invalid");
     const network = await validateApplicationUrl("https://jobs.test/error", {
-      fetcher: async () => { throw new Error("network down"); },
+      fetcher: async () => {
+        throw new Error("network down");
+      },
     });
     assert.equal(network.status, "unknown");
     assert.equal(deriveOpenStatus(invalid), "closed");
@@ -138,7 +201,13 @@ describe("JobSourceOrchestrator", () => {
     const result = await new JobSourceOrchestrator([
       adapter("company", [rawJob()]),
       failingAdapter("greenhouse"),
-      adapter("lever", [rawJob({ source: "lever", externalJobId: "two", company: "Different Co" })]),
+      adapter("lever", [
+        rawJob({
+          source: "lever",
+          externalJobId: "two",
+          company: "Different Co",
+        }),
+      ]),
     ]).ingest({ now, validateApplicationUrls: false });
 
     assert.equal(result.stats.totalFetched, 2);
@@ -146,7 +215,11 @@ describe("JobSourceOrchestrator", () => {
     assert.equal(result.stats.totalDuplicates, 0);
     assert.deepEqual(
       result.sources.map((source) => [source.source, source.status]),
-      [["company", "success"], ["greenhouse", "failed"], ["lever", "success"]],
+      [
+        ["company", "success"],
+        ["greenhouse", "failed"],
+        ["lever", "success"],
+      ],
     );
   });
 
@@ -158,7 +231,10 @@ describe("JobSourceOrchestrator", () => {
     ]).ingest({
       now,
       validateApplicationUrls: true,
-      urlFetcher: async () => { urlChecks += 1; return { status: 200 } as Response; },
+      urlFetcher: async () => {
+        urlChecks += 1;
+        return { status: 200 } as Response;
+      },
     });
 
     assert.equal(result.stats.totalFetched, 2);
@@ -177,7 +253,10 @@ describe("JobSourceOrchestrator", () => {
 
     assert.equal(result.jobs.length, 0);
     assert.equal(result.stats.totalFetched, 0);
-    assert.equal(result.sources.every((source) => source.status === "failed"), true);
+    assert.equal(
+      result.sources.every((source) => source.status === "failed"),
+      true,
+    );
   });
 });
 
@@ -191,10 +270,16 @@ describe("job persistence boundary", () => {
     };
     const job = canonical(rawJob());
     await persistJobs([job], repository);
-    await persistJobs([{ ...job, description: "Refreshed description" }], repository);
+    await persistJobs(
+      [{ ...job, description: "Refreshed description" }],
+      repository,
+    );
 
     assert.equal(calls.length, 2);
-    assert.equal(calls[0]?.canonicalIdentity.key, calls[1]?.canonicalIdentity.key);
+    assert.equal(
+      calls[0]?.canonicalIdentity.key,
+      calls[1]?.canonicalIdentity.key,
+    );
     assert.equal(calls[1]?.description, "Refreshed description");
   });
 });

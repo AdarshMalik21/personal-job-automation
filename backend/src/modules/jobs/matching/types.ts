@@ -1,8 +1,16 @@
-import type { CandidateProfile, Job } from "@personal-job-automation/shared/types";
+import type {
+  CandidateProfile,
+  Job,
+} from "@personal-job-automation/shared/types";
 
 export type MatchDecision = "APPLY" | "REVIEW" | "SKIP";
 export type MatchConfidence = "high" | "medium" | "low";
-export type SkillRelationship = "EXACT" | "RELATED" | "TRANSFERABLE" | "MISSING" | "UNKNOWN";
+export type SkillRelationship =
+  | "EXACT"
+  | "RELATED"
+  | "TRANSFERABLE"
+  | "MISSING"
+  | "UNKNOWN";
 
 export type ExperienceAnalysis = {
   status: "compatible" | "mismatch" | "unknown";

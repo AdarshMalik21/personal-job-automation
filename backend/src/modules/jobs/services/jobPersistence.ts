@@ -9,13 +9,18 @@ const toPersistence = (job: Job): Record<string, unknown> => ({
   ...job,
   ...(job.postedDate ? { postedDate: new Date(job.postedDate) } : {}),
   ...(job.updatedDate ? { updatedDate: new Date(job.updatedDate) } : {}),
-  ...(job.discoveredDate ? { discoveredDate: new Date(job.discoveredDate) } : {}),
+  ...(job.discoveredDate
+    ? { discoveredDate: new Date(job.discoveredDate) }
+    : {}),
 });
 
 export class MongooseJobRepository implements JobRepository {
   async upsert(job: Job): Promise<JobDocument> {
     const identityFilter = job.canonicalIdentity.crossSourceKey
-      ? { "canonicalIdentity.crossSourceKey": job.canonicalIdentity.crossSourceKey }
+      ? {
+          "canonicalIdentity.crossSourceKey":
+            job.canonicalIdentity.crossSourceKey,
+        }
       : { source: job.source, externalJobId: job.externalJobId };
     const sourceFilter = job.externalJobId
       ? { source: job.source, externalJobId: job.externalJobId }

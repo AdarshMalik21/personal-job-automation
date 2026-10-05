@@ -1,5 +1,8 @@
 import { normalizeSkill } from "../utils/normalizeSkills.js";
-import type { CandidateProfile, Job } from "@personal-job-automation/shared/types";
+import type {
+  CandidateProfile,
+  Job,
+} from "@personal-job-automation/shared/types";
 import type { SkillAnalysis, SkillRelationship } from "./types.js";
 
 const relatedSkills: Record<string, string[]> = {
@@ -40,7 +43,9 @@ const unique = (values: string[]): string[] => [...new Set(values)];
 
 const candidateSkillSet = (candidate: CandidateProfile): Set<string> =>
   new Set(
-    [...candidate.skills, ...candidate.technologies].map(normalizeSkill).filter(Boolean),
+    [...candidate.skills, ...candidate.technologies]
+      .map(normalizeSkill)
+      .filter(Boolean),
   );
 
 const relatedCandidateSkillSet = (candidate: CandidateProfile): Set<string> =>
@@ -53,10 +58,19 @@ const relationship = (
 ): SkillRelationship => {
   if (exact.has(skill)) return "EXACT";
   if (related.has(skill)) return "RELATED";
-  if (skill === "nestjs" && ["node.js", "express.js", "typescript"].some((candidateSkill) => exact.has(candidateSkill))) {
+  if (
+    skill === "nestjs" &&
+    ["node.js", "express.js", "typescript"].some((candidateSkill) =>
+      exact.has(candidateSkill),
+    )
+  ) {
     return "TRANSFERABLE";
   }
-  if ((relatedSkills[skill] ?? []).some((candidateSkill) => exact.has(candidateSkill))) {
+  if (
+    (relatedSkills[skill] ?? []).some((candidateSkill) =>
+      exact.has(candidateSkill),
+    )
+  ) {
     return "RELATED";
   }
   return knownSkills.has(skill) ? "MISSING" : "UNKNOWN";
@@ -67,11 +81,18 @@ export type SkillMatchResult = SkillAnalysis & {
   preferredRelationships: Map<string, SkillRelationship>;
 };
 
-export const matchSkills = (candidate: CandidateProfile, job: Job): SkillMatchResult => {
+export const matchSkills = (
+  candidate: CandidateProfile,
+  job: Job,
+): SkillMatchResult => {
   const exact = candidateSkillSet(candidate);
   const related = relatedCandidateSkillSet(candidate);
-  const required = unique(job.requiredSkills.map(normalizeSkill).filter(Boolean));
-  const preferred = unique(job.preferredSkills.map(normalizeSkill).filter(Boolean));
+  const required = unique(
+    job.requiredSkills.map(normalizeSkill).filter(Boolean),
+  );
+  const preferred = unique(
+    job.preferredSkills.map(normalizeSkill).filter(Boolean),
+  );
   const requiredRelationships = new Map<string, SkillRelationship>();
   const preferredRelationships = new Map<string, SkillRelationship>();
   const result: SkillAnalysis = {

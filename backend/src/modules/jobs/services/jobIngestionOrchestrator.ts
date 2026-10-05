@@ -58,18 +58,33 @@ export class JobSourceOrchestrator {
   constructor(private readonly adapters: JobSourceAdapter[]) {}
 
   async ingest(options: JobIngestionOptions = {}): Promise<JobIngestionResult> {
-    console.info(`Starting job ingestion for ${this.adapters.length} source(s)`);
-    const fetchedJobs: Array<{ source: JobSource; jobs: Awaited<ReturnType<JobSourceAdapter["fetchJobs"]>> }> = [];
+    console.info(
+      `Starting job ingestion for ${this.adapters.length} source(s)`,
+    );
+    const fetchedJobs: Array<{
+      source: JobSource;
+      jobs: Awaited<ReturnType<JobSourceAdapter["fetchJobs"]>>;
+    }> = [];
     const sources: SourceIngestionResult[] = [];
 
     for (const adapter of this.adapters) {
       try {
         const jobs = await adapter.fetchJobs();
         fetchedJobs.push({ source: adapter.source, jobs });
-        sources.push({ source: adapter.source, status: "success", fetched: jobs.length });
+        sources.push({
+          source: adapter.source,
+          status: "success",
+          fetched: jobs.length,
+        });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown source failure";
-        sources.push({ source: adapter.source, status: "failed", fetched: 0, error: message });
+        const message =
+          error instanceof Error ? error.message : "Unknown source failure";
+        sources.push({
+          source: adapter.source,
+          status: "failed",
+          fetched: 0,
+          error: message,
+        });
       }
     }
 
@@ -91,7 +106,10 @@ export class JobSourceOrchestrator {
         const cacheKey = url ?? "";
         let urlValidation: Promise<UrlValidationResult>;
         if (!options.validateApplicationUrls || !url) {
-          urlValidation = Promise.resolve({ status: "unknown", reason: "URL validation was not requested" });
+          urlValidation = Promise.resolve({
+            status: "unknown",
+            reason: "URL validation was not requested",
+          });
         } else if (!urlCache.has(cacheKey)) {
           const result = validateApplicationUrl(url, {
             ...(options.urlFetcher ? { fetcher: options.urlFetcher } : {}),
@@ -114,9 +132,13 @@ export class JobSourceOrchestrator {
       }),
     );
 
-    const countFreshness = (status: FreshnessStatus) => jobs.filter((job) => job.freshness.status === status).length;
-    const countOpen = (status: OpenStatus) => jobs.filter((job) => job.openStatus === status).length;
-    console.info(`Ingestion completed: ${jobs.length} clean job(s), ${deduplication.duplicatesRemoved} duplicate(s) removed`);
+    const countFreshness = (status: FreshnessStatus) =>
+      jobs.filter((job) => job.freshness.status === status).length;
+    const countOpen = (status: OpenStatus) =>
+      jobs.filter((job) => job.openStatus === status).length;
+    console.info(
+      `Ingestion completed: ${jobs.length} clean job(s), ${deduplication.duplicatesRemoved} duplicate(s) removed`,
+    );
     return {
       jobs,
       sources,

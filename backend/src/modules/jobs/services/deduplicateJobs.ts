@@ -18,7 +18,8 @@ const confidenceRank = { unknown: 0, weak: 1, probable: 2, strong: 3 } as const;
 
 const identityKeys = (job: Job): string[] => {
   const keys: string[] = [];
-  if (job.canonicalIdentity.strongKey) keys.push(`strong:${job.canonicalIdentity.strongKey}`);
+  if (job.canonicalIdentity.strongKey)
+    keys.push(`strong:${job.canonicalIdentity.strongKey}`);
   if (
     job.canonicalIdentity.components.normalizedLocation &&
     job.canonicalIdentity.confidence !== "weak" &&
@@ -79,7 +80,9 @@ export const deduplicateJobs = (jobs: Job[]): DeduplicationResult => {
     const alternate = group.job === existing ? job : existing;
     group.alternateSources.push({
       source: alternate.source,
-      ...(alternate.externalJobId ? { externalJobId: alternate.externalJobId } : {}),
+      ...(alternate.externalJobId
+        ? { externalJobId: alternate.externalJobId }
+        : {}),
       ...(alternate.sourceUrl ? { sourceUrl: alternate.sourceUrl } : {}),
     });
     for (const key of keys) byIdentity.set(key, groupIndex);

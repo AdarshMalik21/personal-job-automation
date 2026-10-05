@@ -21,14 +21,17 @@ export const validateApplicationUrl = async (
   url: string | undefined,
   options: { fetcher?: UrlFetcher; timeoutMs?: number } = {},
 ): Promise<UrlValidationResult> => {
-  if (!url) return { status: "unknown", reason: "No application URL is available" };
+  if (!url)
+    return { status: "unknown", reason: "No application URL is available" };
   try {
     const parsed = new URL(url);
-    if (!/^https?:$/.test(parsed.protocol)) throw new Error("URL must use HTTP or HTTPS");
+    if (!/^https?:$/.test(parsed.protocol))
+      throw new Error("URL must use HTTP or HTTPS");
   } catch (error) {
     return {
       status: "invalid",
-      reason: error instanceof Error ? error.message : "Application URL is invalid",
+      reason:
+        error instanceof Error ? error.message : "Application URL is invalid",
     };
   }
 
@@ -62,7 +65,10 @@ export const validateApplicationUrl = async (
   } catch (error) {
     return {
       status: "unknown",
-      reason: error instanceof Error ? error.message : "Application URL could not be checked",
+      reason:
+        error instanceof Error
+          ? error.message
+          : "Application URL could not be checked",
     };
   } finally {
     clearTimeout(timeout);
@@ -72,6 +78,10 @@ export const validateApplicationUrl = async (
 export const deriveOpenStatus = (
   urlValidation: UrlValidationResult,
 ): OpenStatus => {
-  if (urlValidation.status === "unreachable" || urlValidation.status === "invalid") return "closed";
+  if (
+    urlValidation.status === "unreachable" ||
+    urlValidation.status === "invalid"
+  )
+    return "closed";
   return "unknown";
 };
