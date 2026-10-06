@@ -8,8 +8,10 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/src/server.js",
+    "worker": "tsx watch src/worker.ts",
+    "start:worker": "node dist/src/worker.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --import tsx --test src/config/__tests__/*.test.ts src/modules/jobs/__tests__/*.test.ts src/modules/applications/__tests__/*.test.ts"
+    "test": "node --import tsx --test src/config/__tests__/*.test.ts src/queue/__tests__/*.test.ts src/scheduler/__tests__/*.test.ts src/worker/__tests__/*.test.ts src/modules/jobs/__tests__/*.test.ts src/modules/applications/__tests__/*.test.ts"
   },
   "keywords": [],
   "author": "",

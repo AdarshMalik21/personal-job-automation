@@ -13,7 +13,7 @@ The backend starts in local development even when MongoDB or Redis is unavailabl
 
 ## Local setup
 
-Requirements: Node.js 20+, npm, MongoDB, and Redis.
+Requirements: Node.js 20+, npm, MongoDB, and a `REDIS_URL` for the managed Upstash Redis instance.
 
 1. Install dependencies from the repository root:
 
@@ -23,7 +23,7 @@ Requirements: Node.js 20+, npm, MongoDB, and Redis.
 
 2. Copy `.env.example` to `backend/.env` and replace the development secrets. The frontend reads `NEXT_PUBLIC_API_URL` from `frontend/.env.local` when it needs a non-default API URL. Leave it unset for local development; the UI then uses `http://localhost:5000/api`.
 
-3. Start MongoDB and Redis locally, or point `MONGODB_URI` and `REDIS_URL` at reachable instances.
+3. Start MongoDB, or point `MONGODB_URI` at Atlas. Point `REDIS_URL` at the Upstash Redis instance. A local Redis installation is not required.
 
 4. Start both applications:
 
@@ -122,7 +122,7 @@ Create a database user and set `MONGODB_URI` to that user's connection string. A
 
 ### Redis
 
-Install Redis on the EC2 instance and keep it bound to localhost unless you intentionally expose it. Example: `REDIS_URL=redis://127.0.0.1:6379`. Production startup exits if Redis cannot be reached. Queues are not enabled in this phase.
+Redis is a managed Upstash instance. Set `REDIS_URL` to that TCP connection string in the environment. The API and the worker both use this value through the existing Redis client. Do not commit the connection string. Production startup exits if Redis cannot be reached. The daily discovery queue also lives in this Redis instance.
 
 ### Playwright and Chromium
 
@@ -145,15 +145,42 @@ Neither response includes credentials, connection strings, or candidate data.
 ### EC2 sequence
 
 1. Use an Ubuntu instance with Node.js 20 and npm. Open SSH to yourself. Open the API port only to the frontend host or to a reverse proxy, not to the whole internet, if you can avoid it.
-2. Install and start Redis locally.
-3. Clone the repository and create the backend environment file with the production variables above.
-4. In Atlas, allow this instance to connect.
-5. `npm install --include=optional`, then install Chromium with the Playwright command above.
-6. `npm run build --workspace backend` and start it with `NODE_ENV=production` under a process manager that sends `SIGTERM` on stop, such as systemd.
-7. Build the frontend elsewhere with `NEXT_PUBLIC_API_URL` pointing at this API. Confirm `FRONTEND_URL` is that frontend's origin.
-8. Check `GET /api/health` and `GET /api/health/system` before using the dashboard.
+2. Clone the repository and create the backend environment file with the production variables above, including the Upstash `REDIS_URL`.
+3. In Atlas, allow this instance to connect.
+4. `npm install --include=optional`, then install Chromium with the Playwright command above.
+5. `npm run build --workspace backend`, then start the API with `npm run start --workspace backend` and the worker with `npm run start:worker --workspace backend`. Use a process manager that sends `SIGTERM` on stop.
+6. Build the frontend elsewhere with `NEXT_PUBLIC_API_URL` pointing at this API. Confirm `FRONTEND_URL` is that frontend origin.
+7. Check `GET /api/health` and `GET /api/health/system` before using the dashboard.
 
-The scheduled job-search worker is not part of this deployment step.
+## Background worker
+
+The API and the worker are separate processes. The API serves the dashboard and does not schedule discovery. The worker connects to the same MongoDB database and the same Upstash Redis instance, then runs the scheduler and the queue consumer.
+
+Start them from the repository root:
+
+```bash
+npm run dev --workspace backend
+npm run worker --workspace backend
+```
+
+After `npm run build --workspace backend`:
+
+```bash
+npm run start --workspace backend
+npm run start:worker --workspace backend
+```
+
+`REDIS_URL` is read from the environment. Nothing in the worker hardcodes the Redis host, username, or password.
+
+### Daily schedule
+
+The scheduler runs inside the worker. It enqueues one `JOB_DISCOVERY` job at 08:00 Asia/Kolkata, Monday through Friday. Saturday and Sunday are skipped. The schedule is not an operating-system cron job.
+
+The idempotency key is `job-discovery:YYYY-MM-DD:Asia/Kolkata`. Redis stores that key with `SET NX`, so a worker restart later the same day does not enqueue a second discovery job. If enqueue itself fails, the key is removed and the next check can try again.
+
+### Queue
+
+Pending, processing, retry, and failed job state stays in Redis. A job is claimed by moving it from the pending list to the processing list. It is retried up to 3 attempts with a short backoff, then marked failed. The worker does not submit applications. Discovery calls the existing ingestion orchestrator, deterministic matcher, and job upsert path. Approve & Submit remains a separate, explicit user action.
 
 ## Phase boundary
 
