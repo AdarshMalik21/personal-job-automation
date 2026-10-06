@@ -27,6 +27,60 @@ const experienceYears = (candidate: CandidateProfile): string[] => [
   }),
 ];
 
+const safeNarrativeWords = new Set([
+  "a",
+  "an",
+  "am",
+  "and",
+  "apis",
+  "applications",
+  "as",
+  "build",
+  "built",
+  "building",
+  "experience",
+  "for",
+  "have",
+  "i",
+  "interested",
+  "in",
+  "my",
+  "of",
+  "on",
+  "payments",
+  "reliable",
+  "services",
+  "skills",
+  "technology",
+  "the",
+  "to",
+  "use",
+  "using",
+  "with",
+  "worked",
+]);
+
+const removeCandidateFacts = (content: string, candidate: CandidateProfile) => {
+  let remainder = content.toLowerCase();
+  const facts = [...new Set(candidateFacts(candidate))]
+    .filter((fact) => fact.trim().length >= 3)
+    .sort((left, right) => right.length - left.length);
+  for (const fact of facts) {
+    const escaped = fact.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    remainder = remainder.replace(new RegExp(escaped, "g"), " ");
+  }
+  return remainder;
+};
+
+const hasOnlySafeNarrativeFraming = (
+  content: string,
+  candidate: CandidateProfile,
+): boolean => {
+  const remainder = removeCandidateFacts(content, candidate);
+  const words = remainder.match(/[a-z]+/g) ?? [];
+  return words.every((word) => safeNarrativeWords.has(word));
+};
+
 const containsUnsupportedYears = (
   content: string,
   candidate: CandidateProfile,
@@ -96,8 +150,10 @@ export const containsCandidateFact = (
     .filter(Boolean);
   return (
     sentences.length > 0 &&
-    sentences.every((sentence) =>
-      facts.some((fact) => sentence.includes(fact)),
+    sentences.every(
+      (sentence) =>
+        facts.some((fact) => sentence.includes(fact)) &&
+        hasOnlySafeNarrativeFraming(sentence, candidate),
     )
   );
 };
@@ -106,6 +162,7 @@ export const candidateFacts = (candidate: CandidateProfile): string[] =>
   [
     candidate.personal.firstName,
     candidate.personal.lastName,
+    candidate.personal.professionalSummary,
     ...candidate.skills,
     ...candidate.technologies,
     ...collectStrings(candidate.experience),

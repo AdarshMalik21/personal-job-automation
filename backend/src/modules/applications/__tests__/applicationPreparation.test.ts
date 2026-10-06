@@ -187,6 +187,60 @@ describe("application preparation services", () => {
     assert.equal(answer?.answer, undefined);
   });
 
+  it("rejects a fabricated claim sharing a sentence with a valid skill", async () => {
+    const provider: PreparationLlmProvider = {
+      generateAnswer: async () =>
+        "I have experience with Node.js and I led a team of 30 engineers at Google.",
+    };
+    const answers = await prepareApplicationAnswers(candidate(), job(), provider);
+    const answer = answers.find(
+      (item) => item.question === "Why are you interested in this role?",
+    );
+    assert.equal(answer?.status, "requires_review");
+    assert.equal(answer?.answer, undefined);
+  });
+
+  it("rejects fabricated metrics and project achievements", async () => {
+    const provider: PreparationLlmProvider = {
+      generateAnswer: async () =>
+        "I build TypeScript applications and managed systems processing 10 million requests per second.",
+    };
+    const answers = await prepareApplicationAnswers(candidate(), job(), provider);
+    assert.equal(
+      answers.find((item) => item.question === "Why are you interested in this role?")?.status,
+      "requires_review",
+    );
+
+    const projectProvider: PreparationLlmProvider = {
+      generateAnswer: async () =>
+        "I built Payments API and scaled it to 10 million users.",
+    };
+    const projectAnswers = await prepareApplicationAnswers(
+      candidate(),
+      job(),
+      projectProvider,
+    );
+    assert.equal(
+      projectAnswers.find(
+        (item) => item.question === "Why are you interested in this role?",
+      )?.status,
+      "requires_review",
+    );
+  });
+
+  it("accepts independently grounded multi-sentence content", async () => {
+    const provider: PreparationLlmProvider = {
+      generateAnswer: async () =>
+        "I have experience with Node.js.\nI have experience with TypeScript.",
+    };
+    const answers = await prepareApplicationAnswers(candidate(), job(), provider);
+    const answer = answers.find(
+      (item) => item.question === "Why are you interested in this role?",
+    );
+    assert.equal(answer?.status, "generated");
+    assert.ok(answer?.answer);
+  });
+
   it("never calls the provider for sensitive missing information", async () => {
     const questions: string[] = [];
     const provider: PreparationLlmProvider = {
