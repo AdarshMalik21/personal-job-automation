@@ -53,9 +53,14 @@ export const tailorResume = async (
       relevance(right, jobText) - relevance(left, jobText) ||
       left.localeCompare(right),
   );
-  const generated = provider.tailorResume
-    ? await provider.tailorResume({ candidate, job })
-    : {};
+  let generated: { summary?: string } = {};
+  if (provider.tailorResume) {
+    try {
+      generated = await provider.tailorResume({ candidate, job });
+    } catch {
+      generated = {};
+    }
+  }
   const generatedSummary =
     generated.summary?.trim() &&
     validateGeneratedSummary(generated.summary, candidate)
@@ -82,10 +87,19 @@ export const containsCandidateFact = (
   content: string,
   candidate: CandidateProfile,
 ): boolean => {
-  const normalizedContent = content.toLowerCase();
-  return candidateFacts(candidate)
+  const facts = candidateFacts(candidate)
     .filter((fact) => fact.trim().length >= 3)
-    .some((fact) => normalizedContent.includes(fact.toLowerCase()));
+    .map((fact) => fact.toLowerCase());
+  const sentences = content
+    .split(/(?:[.!?]+\s+|\r?\n+)/)
+    .map((sentence) => sentence.trim().toLowerCase())
+    .filter(Boolean);
+  return (
+    sentences.length > 0 &&
+    sentences.every((sentence) =>
+      facts.some((fact) => sentence.includes(fact)),
+    )
+  );
 };
 
 export const candidateFacts = (candidate: CandidateProfile): string[] =>
@@ -94,8 +108,6 @@ export const candidateFacts = (candidate: CandidateProfile): string[] =>
     candidate.personal.lastName,
     ...candidate.skills,
     ...candidate.technologies,
-    ...candidate.preferredRoles,
-    ...candidate.preferredLocations,
     ...collectStrings(candidate.experience),
     ...collectStrings(candidate.projects),
     ...collectStrings(candidate.education),

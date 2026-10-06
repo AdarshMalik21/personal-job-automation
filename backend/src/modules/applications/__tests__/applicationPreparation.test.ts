@@ -108,6 +108,17 @@ describe("application preparation services", () => {
     );
   });
 
+  it("rejects mixed truthful and fabricated cover letters without retaining content", async () => {
+    const provider: PreparationLlmProvider = {
+      generateCoverLetter: async () =>
+        "I have experience with Node.js and TypeScript.\n" +
+        "I previously led 30 engineers at Google.",
+    };
+    const result = await prepareCoverLetter(candidate(), job(), provider);
+    assert.equal(result.status, "needs_information");
+    assert.equal("content" in result, false);
+  });
+
   it("answers known profile questions and marks sensitive unknowns for review", async () => {
     const answers = await prepareApplicationAnswers(candidate(), job());
     assert.deepEqual(answers.find((answer) => answer.question === "Years of experience"), {
@@ -162,6 +173,20 @@ describe("application preparation services", () => {
     assert.equal(answer?.answer, undefined);
   });
 
+  it("rejects mixed truthful and fabricated generated answers", async () => {
+    const provider: PreparationLlmProvider = {
+      generateAnswer: async () =>
+        "I have experience building Node.js applications and TypeScript services.\n" +
+        "I also led a team of 20 engineers at Google and managed systems processing millions of requests per second.",
+    };
+    const answers = await prepareApplicationAnswers(candidate(), job(), provider);
+    const answer = answers.find(
+      (item) => item.question === "Why are you interested in this role?",
+    );
+    assert.equal(answer?.status, "requires_review");
+    assert.equal(answer?.answer, undefined);
+  });
+
   it("never calls the provider for sensitive missing information", async () => {
     const questions: string[] = [];
     const provider: PreparationLlmProvider = {
@@ -189,6 +214,18 @@ describe("application preparation services", () => {
     const provider: PreparationLlmProvider = {
       tailorResume: async () => ({
         summary: "Senior engineer with 8 years of experience leading large-scale systems.",
+      }),
+    };
+    const resume = await tailorResume(candidate(), job(), provider);
+    assert.equal(resume.summary, candidate().personal.professionalSummary);
+  });
+
+  it("rejects mixed truthful and fabricated resume summaries", async () => {
+    const provider: PreparationLlmProvider = {
+      tailorResume: async () => ({
+        summary:
+          "Full-stack developer with experience building Node.js applications. " +
+          "Led a team of 20 engineers at Google and designed infrastructure serving 10 million users.",
       }),
     };
     const resume = await tailorResume(candidate(), job(), provider);

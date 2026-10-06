@@ -27,7 +27,18 @@ export const prepareCoverLetter = async (
       missingInformation: ["cover letter generation provider"],
     };
   }
-  const content = (await provider.generateCoverLetter({ candidate, job })).trim();
+  let content = "";
+  try {
+    content = (
+      await provider.generateCoverLetter({ candidate, job })
+    ).trim();
+  } catch {
+    return {
+      status: "needs_information",
+      reason: "Cover letter provider failed before producing verifiable content.",
+      missingInformation: ["grounded cover letter content"],
+    };
+  }
   if (!content || !validateGeneratedContent(content, candidate)) {
     return {
       status: "needs_information",

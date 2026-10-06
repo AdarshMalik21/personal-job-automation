@@ -57,7 +57,14 @@ export const prepareApplicationAnswers = async (
       });
       continue;
     }
-    const answer = (await provider.generateAnswer(question, { candidate, job })).trim();
+    let answer = "";
+    try {
+      answer = (
+        await provider.generateAnswer(question, { candidate, job })
+      ).trim();
+    } catch {
+      answer = "";
+    }
     answers.push(
       answer && validateGeneratedContent(answer, candidate)
         ? { question, status: "generated", answer, source: "preparation provider" }
@@ -65,8 +72,8 @@ export const prepareApplicationAnswers = async (
             question,
             status: "requires_review",
             source: answer
-              ? "provider answer could not be grounded in candidate facts"
-              : "provider returned no answer",
+              ? "provider answer could not be deterministically verified"
+              : "provider failed or returned no answer",
           },
     );
   }
