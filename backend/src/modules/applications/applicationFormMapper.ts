@@ -18,8 +18,13 @@ const fieldText = (field: DetectedApplicationField) =>
 const exactAnswer = (
   field: DetectedApplicationField,
   answers: PreparedAnswer[],
-): string | undefined =>
-  answers.find((answer) => normalized(answer.question) === fieldText(field))?.answer;
+): string | undefined => {
+  const text = fieldText(field);
+  return answers.find((answer) => {
+    const question = normalized(answer.question);
+    return question === normalized(field.group) || text.includes(question);
+  })?.answer;
+};
 
 export const mapApplicationField = (
   field: DetectedApplicationField,
@@ -41,7 +46,13 @@ export const mapApplicationField = (
       : { field, confidence: "unknown", reason: "Candidate value is missing" };
   }
   const answer = exactAnswer(field, answers);
-  if (answer) return { field, value: answer, confidence: "high" };
+  if (answer && field.type === "radio") {
+    const option = normalized([field.label, field.value].filter(Boolean).join(" "));
+    return normalized(answer) === option
+      ? { field, value: answer, confidence: "high" }
+      : { field, confidence: "unknown", reason: "A different radio option is the approved answer" };
+  }
+  if (answer && field.type !== "checkbox") return { field, value: answer, confidence: "high" };
   if (
     /(salary|compensation|authorization|visa|sponsorship|notice|relocation|citizenship|gender|birth|criminal|disability|veteran)/.test(
       text,

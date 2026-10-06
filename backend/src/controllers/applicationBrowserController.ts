@@ -3,13 +3,13 @@ import { isValidObjectId } from "mongoose";
 import { ApplicationPreparationModel } from "../models/ApplicationPreparation.js";
 import { CandidateProfileModel } from "../models/CandidateProfile.js";
 import { JobModel } from "../models/Job.js";
-import { runApplication } from "../modules/applications/applicationRunner.js";
+import { runApplication, type BrowserRunHooks } from "../modules/applications/applicationRunner.js";
 
 const notFound = (response: Parameters<RequestHandler>[1], message: string) => {
   response.status(404).json({ success: false, message });
 };
 
-const activeRuns = new Set<string>();
+const activeRuns = new Map<string, { stop: () => Promise<void> }>();
 const requestJobId = (request: Parameters<RequestHandler>[0]): string | undefined => {
   const value = request.params.jobId;
   return typeof value === "string" ? value : undefined;
@@ -54,7 +54,24 @@ export const browserRun: RequestHandler = async (request, response, next) => {
       response.status(409).json({ success: false, message: "A browser run is already active" });
       return;
     }
-    activeRuns.add(jobId);
+    let stopped = false;
+    activeRuns.set(jobId, {
+      stop: async () => {
+        stopped = true;
+      },
+    });
+    const hooks: BrowserRunHooks = {
+      isStopped: () => stopped,
+      onBrowserCreated: (browser, context) => {
+        activeRuns.set(jobId, {
+          stop: async () => {
+            stopped = true;
+            await context.close().catch(() => undefined);
+            await browser.close().catch(() => undefined);
+          },
+        });
+      },
+    };
     try {
       const result = await runApplication({
         job: {
@@ -66,7 +83,7 @@ export const browserRun: RequestHandler = async (request, response, next) => {
         },
         candidate: candidate as never,
         preparation: preparation as never,
-      });
+      }, undefined, hooks);
       const updated = await ApplicationPreparationModel.findByIdAndUpdate(
         preparation._id,
         { $set: { browserRun: { ...result, completedAt: new Date() } } },
@@ -117,29 +134,13 @@ export const stopBrowserRun: RequestHandler = async (
       notFound(response, "Job not found");
       return;
     }
-    const { preparation: existingPreparation } = await loadPreparation(jobId);
-    if (!existingPreparation) {
-      notFound(response, "Application preparation not found");
+    const activeRun = activeRuns.get(jobId);
+    if (!activeRun) {
+      response.status(409).json({ success: false, message: "No active browser run exists" });
       return;
     }
-    const preparation = await ApplicationPreparationModel.findByIdAndUpdate(
-      existingPreparation._id,
-      {
-        $set: {
-          browserRun: {
-            status: "PAUSED_FOR_REVIEW",
-            reason: "Browser run stopped by user",
-            completedAt: new Date(),
-          },
-        },
-      },
-      { new: true },
-    ).lean();
-    if (!preparation) {
-      notFound(response, "Application preparation not found");
-      return;
-    }
-    response.json({ success: true, data: { browserRun: preparation.browserRun } });
+    await activeRun.stop();
+    response.status(202).json({ success: true, data: { status: "STOP_REQUESTED" } });
   } catch (error) {
     next(error);
   }

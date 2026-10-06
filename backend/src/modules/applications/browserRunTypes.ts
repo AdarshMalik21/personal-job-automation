@@ -16,8 +16,12 @@ export type DetectedApplicationField = {
   name?: string;
   id?: string;
   placeholder?: string;
+  value?: string;
   required: boolean;
   options: string[];
+  visible?: boolean;
+  enabled?: boolean;
+  group?: string;
 };
 
 export type BrowserReviewItem = {
@@ -34,4 +38,5 @@ export type BrowserRunResult = {
   uploads: string[];
   reviewItems: BrowserReviewItem[];
   reason?: string;
+  pagesProcessed?: number;
 };

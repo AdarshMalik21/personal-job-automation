@@ -1,4 +1,5 @@
 import { access } from "node:fs/promises";
+import { isIP } from "node:net";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import type { CandidateProfile, Job } from "@personal-job-automation/shared/types";
 import { mapApplicationField } from "./applicationFormMapper.js";
@@ -7,6 +8,10 @@ import type { BrowserRunResult, DetectedApplicationField } from "./browserRunTyp
 import type { PreparationResult } from "./types.js";
 
 export type BrowserFactory = () => Promise<Browser>;
+export type BrowserRunHooks = {
+  onBrowserCreated?: (browser: Browser, context: BrowserContext) => void;
+  isStopped?: () => boolean;
+};
 export type BrowserRunnerInput = {
   job: Pick<Job, "officialApplicationUrl" | "status"> & { match?: { decision?: string } };
   candidate: CandidateProfile;
@@ -17,7 +22,8 @@ export type BrowserRunnerInput = {
 };
 
 const defaultBrowserFactory: BrowserFactory = () => chromium.launch({ headless: true });
-const finalButtonPattern = /\b(submit|apply|finish|complete|send)\b/i;
+const MAX_APPLICATION_PAGES = 10;
+const finalButtonPattern = /^\s*(submit(?: application)?|apply(?: now)?|finish|complete(?: application)?|send application)\s*$/i;
 const statusFromPage = (text: string): BrowserRunResult["status"] | undefined => {
   if (/captcha|cloudflare|security challenge/.test(text)) return "CAPTCHA_REQUIRED";
   if (/one time password|\botp\b/.test(text)) return "OTP_REQUIRED";
@@ -26,10 +32,32 @@ const statusFromPage = (text: string): BrowserRunResult["status"] | undefined =>
   return undefined;
 };
 
-const validUrl = (value: string | undefined): value is string => {
+export const isSafeApplicationUrl = (value: string | undefined): value is string => {
   try {
     const url = new URL(value ?? "");
-    return url.protocol === "https:" || url.protocol === "http:";
+    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local") ||
+      hostname === "ip6-loopback"
+    ) return false;
+    const ipVersion = isIP(hostname);
+    if (ipVersion === 4) {
+      const [first = -1, second = -1] = hostname.split(".").map(Number);
+      return !(
+        first === 10 ||
+        first === 127 ||
+        (first === 172 && second >= 16 && second <= 31) ||
+        (first === 192 && second === 168) ||
+        (first === 169 && second === 254)
+      );
+    }
+    if (ipVersion === 6) {
+      return hostname !== "::1" && !hostname.startsWith("fc") && !hostname.startsWith("fd") && !hostname.startsWith("fe80:");
+    }
+    return true;
   } catch {
     return false;
   }
@@ -45,17 +73,26 @@ const filePath = async (candidatePath: string | undefined): Promise<string | und
   }
 };
 
+const cssEscape = (value: string) => value.replace(/([!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, "\\$1");
+
 const fieldLocator = (page: Page, field: DetectedApplicationField) => {
-  if (field.id) return page.locator(`#${field.id}`);
-  if (field.name) return page.locator(`[name="${field.name}"]`);
+  if (field.label && typeof (page as Page & { getByLabel?: unknown }).getByLabel === "function") {
+    const labelled = page.getByLabel(field.label, { exact: true });
+    if (field.id || field.name) return labelled;
+  }
+  if (field.id) return page.locator(`#${cssEscape(field.id)}`);
+  if (field.name) return page.locator(`[name="${cssEscape(field.name)}"]`);
   return page.locator(`[data-application-field-id="${field.elementId}"]`);
 };
+const count = async (locator: { count?: () => Promise<number> }) =>
+  typeof locator.count === "function" ? locator.count() : 0;
 
 export const runApplication = async (
   input: BrowserRunnerInput,
   browserFactory: BrowserFactory = defaultBrowserFactory,
+  hooks: BrowserRunHooks = {},
 ): Promise<BrowserRunResult> => {
-  if (!validUrl(input.job.officialApplicationUrl)) {
+  if (!isSafeApplicationUrl(input.job.officialApplicationUrl)) {
     return {
       status: "FAILED",
       fieldsDetected: 0,
@@ -105,10 +142,22 @@ export const runApplication = async (
   try {
     browser = await browserFactory();
     context = await browser.newContext();
+    hooks.onBrowserCreated?.(browser, context);
     const page = await context.newPage();
     await page.goto(input.job.officialApplicationUrl, { waitUntil: "domcontentloaded", timeout: 15_000 });
     return await fillObservedPage(page, input);
   } catch (error) {
+    if (hooks.isStopped?.()) {
+      return {
+        status: "PAUSED_FOR_REVIEW",
+        fieldsDetected: 0,
+        fieldsFilled: [],
+        fieldsSkipped: [],
+        uploads: [],
+        reviewItems: [],
+        reason: "Browser run stopped by user",
+      };
+    }
     return {
       status: "FAILED",
       fieldsDetected: 0,
@@ -134,83 +183,91 @@ export const fillObservedPage = async (
 ): Promise<BrowserRunResult> => {
   const inspectFields = dependencies.inspectFields ?? inspectApplicationFields;
   const getPageText = dependencies.getPageText ?? pageText;
-  const fields = await inspectFields(page);
   const result: BrowserRunResult = {
     status: "RUNNING",
     url: page.url(),
-    fieldsDetected: fields.length,
+    fieldsDetected: 0,
     fieldsFilled: [],
     fieldsSkipped: [],
     uploads: [],
     reviewItems: [],
+    pagesProcessed: 0,
   };
-  const pageStatus = statusFromPage(await getPageText(page));
-  if (pageStatus) return { ...result, status: pageStatus };
-
-  const mappings = fields.map((field) =>
-    mapApplicationField(field, input.candidate, input.preparation.generatedAnswers),
-  );
-  for (const mapping of mappings) {
-    const locator = fieldLocator(page, mapping.field);
-    if (mapping.value === undefined) {
-      result.fieldsSkipped.push(mapping.field.elementId);
-      if (mapping.field.required) {
-        result.reviewItems.push({ reason: mapping.reason ?? "Required field needs review", field: mapping.field });
+  for (let pageNumber = 0; pageNumber < MAX_APPLICATION_PAGES; pageNumber += 1) {
+    result.pagesProcessed = pageNumber + 1;
+    result.url = page.url();
+    const pageStatus = statusFromPage(await getPageText(page));
+    if (pageStatus) return { ...result, status: pageStatus };
+    const fields = await inspectFields(page);
+    result.fieldsDetected += fields.length;
+    const mappings = fields.map((field) =>
+      mapApplicationField(field, input.candidate, input.preparation.generatedAnswers),
+    );
+    for (const mapping of mappings) {
+      const locator = fieldLocator(page, mapping.field);
+      if (mapping.value === undefined || mapping.field.type === "checkbox" ||
+        (mapping.field.type === "radio" && mapping.value === undefined)) {
+        result.fieldsSkipped.push(mapping.field.elementId);
+        if (mapping.field.required) {
+          result.reviewItems.push({
+            reason: mapping.reason ?? "Boolean or option field requires explicit review",
+            field: mapping.field,
+          });
+        }
+        continue;
       }
-      continue;
+      if (mapping.field.type === "file") continue;
+      if (mapping.field.type === "radio") await locator.check();
+      else if (mapping.field.type === "select-one") await locator.selectOption({ label: mapping.value });
+      else await locator.fill(mapping.value);
+      if ((await locator.inputValue()) !== mapping.value) {
+        result.reviewItems.push({ reason: "Field value could not be verified", field: mapping.field });
+      } else {
+        result.fieldsFilled.push(mapping.field.elementId);
+      }
     }
-    if (mapping.field.type === "file") continue;
-    if (mapping.field.type === "select-one") {
-      await locator.selectOption({ label: mapping.value });
-    } else if (mapping.field.type === "checkbox" || mapping.field.type === "radio") {
-      await locator.check();
-    } else {
-      await locator.fill(mapping.value);
-    }
-    const verified = mapping.field.type === "checkbox" || mapping.field.type === "radio"
-      ? await locator.isChecked()
-      : await locator.inputValue() === mapping.value;
-    if (!verified) {
-      result.reviewItems.push({ reason: "Field value could not be verified", field: mapping.field });
-    } else {
-      result.fieldsFilled.push(mapping.field.elementId);
-    }
-  }
-  const resumePath = await filePath(input.preparation.tailoredResume?.filePath);
-  const coverLetterPath = await filePath(input.preparation.coverLetter?.filePath);
-  for (const field of fields.filter((item) => item.type === "file")) {
-    const path = /cover|motivation/i.test(field.label ?? "")
-      ? coverLetterPath
-      : resumePath;
-    if (!path) {
-      if (field.required) result.reviewItems.push({ reason: "Required prepared file is unavailable", field });
-      continue;
-    }
-    const locator = fieldLocator(page, field);
-    await locator.setInputFiles(path);
-    if ((await locator.inputValue()) === "") {
-      result.reviewItems.push({ reason: "File upload could not be verified", field });
-    } else {
+    const resumePath = await filePath(input.preparation.tailoredResume?.filePath);
+    const coverLetterPath =
+      input.preparation.coverLetter?.status === "ready_for_review"
+        ? await filePath(input.preparation.coverLetter.filePath)
+        : undefined;
+    for (const field of fields.filter((item) => item.type === "file")) {
+      const path = /cover|motivation/i.test(field.label ?? "") ? coverLetterPath : resumePath;
+      if (!path) {
+        if (field.required) result.reviewItems.push({ reason: "Required prepared file is unavailable", field });
+        continue;
+      }
+      await fieldLocator(page, field).setInputFiles(path);
       result.uploads.push(field.elementId);
     }
-  }
-  const submit = page.getByRole("button", { name: finalButtonPattern });
-  if (await submit.count()) {
-    return {
-      ...result,
-      status: result.reviewItems.length ? "PAUSED_FOR_REVIEW" : "READY_FOR_SUBMISSION",
-      reason: "Final submission control detected; it was not clicked",
-    };
-  }
-  if (result.reviewItems.length) return { ...result, status: "PAUSED_FOR_REVIEW" };
-  const next = page.getByRole("button", { name: /\b(next|continue|save and continue)\b/i });
-  if (await next.count()) {
-    const before = page.url();
+    const submit = page.getByRole("button", { name: finalButtonPattern });
+    const submitInput = page.locator('button[type="submit"], input[type="submit"]');
+    if ((await count(submit)) || (await count(submitInput))) {
+      return {
+        ...result,
+        status: result.reviewItems.length ? "PAUSED_FOR_REVIEW" : "READY_FOR_SUBMISSION",
+        reason: "Final submission control detected; it was not clicked",
+      };
+    }
+    if (result.reviewItems.length) return { ...result, status: "PAUSED_FOR_REVIEW" };
+    const next = page.getByRole("button", { name: /\b(next|continue|save and continue)\b/i });
+    if (!(await count(next))) return result;
+    const beforeUrl = page.url();
+    const beforeText = await getPageText(page);
     await next.click();
-    await page.waitForTimeout(100);
-    if (page.url() === before && (await getPageText(page)).includes("continue")) {
+    try {
+      if (typeof page.waitForLoadState === "function") {
+        await page.waitForLoadState("domcontentloaded", { timeout: 3_000 });
+      } else {
+        await page.waitForTimeout(300);
+      }
+    } catch {
+      await page.waitForTimeout(300);
+    }
+    const afterText = await getPageText(page);
+    if (page.url() === beforeUrl && afterText === beforeText) {
       return { ...result, status: "PAUSED_FOR_REVIEW", reason: "Continue action could not be verified" };
     }
   }
-  return result;
+  return { ...result, status: "PAUSED_FOR_REVIEW", reason: "Maximum application page limit reached." };
 };

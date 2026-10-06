@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { fillObservedPage, runApplication } from "../applicationRunner.js";
+import { fillObservedPage, isSafeApplicationUrl, runApplication } from "../applicationRunner.js";
 import type { BrowserRunnerInput } from "../applicationRunner.js";
 import type { DetectedApplicationField } from "../browserRunTypes.js";
 import type { CandidateProfile, Job } from "@personal-job-automation/shared/types";
@@ -150,5 +150,20 @@ describe("application browser runner", () => {
       },
     );
     assert.equal(result.status, "FAILED");
+  });
+
+  it("rejects private and local application destinations", () => {
+    for (const url of [
+      "http://localhost:3000/apply",
+      "http://127.0.0.1/apply",
+      "http://10.0.0.1/apply",
+      "http://172.16.0.1/apply",
+      "http://192.168.0.1/apply",
+      "http://169.254.169.254/",
+      "http://[::1]/apply",
+    ]) {
+      assert.equal(isSafeApplicationUrl(url), false, url);
+    }
+    assert.equal(isSafeApplicationUrl("https://jobs.example.com/apply"), true);
   });
 });
