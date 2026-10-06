@@ -193,7 +193,7 @@ describe("application browser runner", () => {
     for (const name of ["Continue", "Next", "Save & Continue", "Review Application"]) {
       assert.equal(isFinalSubmissionControl(name), false, name);
     }
-    for (const name of ["Submit Application", "Apply Now"]) {
+    for (const name of ["Submit Application", "Apply Now", "Finish Application"]) {
       assert.equal(isFinalSubmissionControl(name), true, name);
     }
   });
@@ -212,7 +212,7 @@ describe("application browser runner", () => {
   });
 
   it("detects actual submit controls without clicking them", async () => {
-    for (const name of ["Submit Application", "Apply Now"]) {
+    for (const name of ["Submit Application", "Apply Now", "Finish Application"]) {
       let clicked = 0;
       const { page } = pageWith([], [{ name, type: "submit", onClick: () => { clicked += 1; } }]);
       const result = await fillObservedPage(page as never, input(), {

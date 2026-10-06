@@ -23,7 +23,7 @@ export type BrowserRunnerInput = {
 
 const defaultBrowserFactory: BrowserFactory = () => chromium.launch({ headless: true });
 const MAX_APPLICATION_PAGES = 10;
-const finalButtonPattern = /^\s*(submit(?: application)?|apply(?: now)?|finish|complete(?: application)?|send application)\s*$/i;
+const finalButtonPattern = /^\s*(submit(?: application)?|apply(?: now)?|finish(?: application)?|complete(?: application)?|send application)\s*$/i;
 const navigationButtonPattern =
   /^\s*(next(?: step)?|continue(?: to application| application)?|save\s*(?:&|and)\s*continue|proceed|review(?: application)?|previous|back)\s*$/i;
 const statusFromPage = (text: string): BrowserRunResult["status"] | undefined => {
