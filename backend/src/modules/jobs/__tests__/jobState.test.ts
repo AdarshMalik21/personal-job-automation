@@ -8,8 +8,14 @@ import {
 
 describe("dashboard job state", () => {
   it("preserves application status when review state changes", () => {
-    const reviewed = serializeJob({ reviewStatus: "reviewed", match: {} }, "submitted");
-    const skipped = serializeJob({ reviewStatus: "skipped", match: {} }, "interview");
+    const reviewed = serializeJob(
+      { reviewStatus: "reviewed", match: {} },
+      "submitted",
+    );
+    const skipped = serializeJob(
+      { reviewStatus: "skipped", match: {} },
+      "interview",
+    );
     assert.equal(reviewed.applicationStatus, "submitted");
     assert.equal(reviewed.reviewStatus, "reviewed");
     assert.equal(skipped.applicationStatus, "interview");

@@ -42,9 +42,14 @@ const numberValue = (input: unknown, name: string): number | undefined => {
   return parsed;
 };
 
-export const parseJobListQuery = (input: Record<string, unknown>): JobListQuery => {
+export const parseJobListQuery = (
+  input: Record<string, unknown>,
+): JobListQuery => {
   const page = Math.max(1, Math.floor(numberValue(input.page, "page") ?? 1));
-  const limit = Math.min(50, Math.max(1, Math.floor(numberValue(input.limit, "limit") ?? 20)));
+  const limit = Math.min(
+    50,
+    Math.max(1, Math.floor(numberValue(input.limit, "limit") ?? 20)),
+  );
   const decision = value(input.decision);
   const reviewStatus = value(input.reviewStatus);
   const search = value(input.search);
@@ -56,12 +61,21 @@ export const parseJobListQuery = (input: Record<string, unknown>): JobListQuery 
   const maxScore = numberValue(input.maxScore, "maxScore");
   const sortBy = value(input.sortBy) ?? "score";
   const sortOrder = value(input.sortOrder) === "asc" ? 1 : -1;
-  if (decision && !decisions.has(decision)) throw new Error("decision is invalid");
-  if (reviewStatus && !reviewStatuses.has(reviewStatus)) throw new Error("reviewStatus is invalid");
-  if (freshness && !freshnessStatuses.has(freshness)) throw new Error("freshness is invalid");
-  const parsedDecision = decision as Exclude<JobListQuery["decision"], undefined> | undefined;
-  const parsedReviewStatus = reviewStatus as Exclude<JobListQuery["reviewStatus"], undefined> | undefined;
-  const parsedFreshness = freshness as Exclude<JobListQuery["freshness"], undefined> | undefined;
+  if (decision && !decisions.has(decision))
+    throw new Error("decision is invalid");
+  if (reviewStatus && !reviewStatuses.has(reviewStatus))
+    throw new Error("reviewStatus is invalid");
+  if (freshness && !freshnessStatuses.has(freshness))
+    throw new Error("freshness is invalid");
+  const parsedDecision = decision as
+    | Exclude<JobListQuery["decision"], undefined>
+    | undefined;
+  const parsedReviewStatus = reviewStatus as
+    | Exclude<JobListQuery["reviewStatus"], undefined>
+    | undefined;
+  const parsedFreshness = freshness as
+    | Exclude<JobListQuery["freshness"], undefined>
+    | undefined;
   if (!sortFields[sortBy]) throw new Error("sortBy is invalid");
   return {
     page,
@@ -75,7 +89,12 @@ export const parseJobListQuery = (input: Record<string, unknown>): JobListQuery 
     ...(parsedFreshness ? { freshness: parsedFreshness } : {}),
     ...(minScore !== undefined ? { minScore } : {}),
     ...(maxScore !== undefined ? { maxScore } : {}),
-    sort: Object.fromEntries(Object.entries(sortFields[sortBy]).map(([field, direction]) => [field, (direction * sortOrder) as 1 | -1])),
+    sort: Object.fromEntries(
+      Object.entries(sortFields[sortBy]).map(([field, direction]) => [
+        field,
+        (direction * sortOrder) as 1 | -1,
+      ]),
+    ),
   };
 };
 
@@ -111,26 +130,46 @@ export const buildFreshnessFilter = (
   return { $and: [missingUpdatedDate, missingPostedDate] };
 };
 
-const escapeRegex = (input: string): string => input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (input: string): string =>
+  input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-export const buildJobFilter = (query: JobListQuery): FilterQuery<JobDocument> => {
+export const buildJobFilter = (
+  query: JobListQuery,
+): FilterQuery<JobDocument> => {
   const filter: FilterQuery<JobDocument> = {};
   const and: FilterQuery<JobDocument>[] = [];
   if (query.decision) and.push({ "match.decision": query.decision });
   if (query.status) and.push({ status: query.status });
   if (query.reviewStatus) and.push({ reviewStatus: query.reviewStatus });
   if (query.remoteStatus) and.push({ remoteStatus: query.remoteStatus });
-  if (query.location) and.push({ $or: [{ location: new RegExp(escapeRegex(query.location), "i") }, { normalizedLocation: new RegExp(escapeRegex(query.location), "i") }] });
+  if (query.location)
+    and.push({
+      $or: [
+        { location: new RegExp(escapeRegex(query.location), "i") },
+        { normalizedLocation: new RegExp(escapeRegex(query.location), "i") },
+      ],
+    });
   if (query.freshness) and.push(buildFreshnessFilter(query.freshness));
   if (query.search) {
     const search = new RegExp(escapeRegex(query.search), "i");
-    and.push({ $or: [{ title: search }, { company: search }, { description: search }, { location: search }, { requiredSkills: search }, { preferredSkills: search }] });
+    and.push({
+      $or: [
+        { title: search },
+        { company: search },
+        { description: search },
+        { location: search },
+        { requiredSkills: search },
+        { preferredSkills: search },
+      ],
+    });
   }
   if (query.minScore !== undefined || query.maxScore !== undefined) {
     const range: Record<string, number> = {};
     if (query.minScore !== undefined) range.$gte = query.minScore;
     if (query.maxScore !== undefined) range.$lte = query.maxScore;
-    and.push({ $or: [{ "match.matchScore": range }, { "match.score": range }] });
+    and.push({
+      $or: [{ "match.matchScore": range }, { "match.score": range }],
+    });
   }
   if (and.length === 1) return and[0]!;
   if (and.length > 1) filter.$and = and;

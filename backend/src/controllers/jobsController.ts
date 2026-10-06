@@ -19,17 +19,28 @@ export const applicationStatuses = async (jobIds: string[]) => {
   const applications = await ApplicationModel.find({ jobId: { $in: jobIds } })
     .select("jobId status")
     .lean();
-  return new Map(applications.map((application) => [String(application.jobId), application.status]));
+  return new Map(
+    applications.map((application) => [
+      String(application.jobId),
+      application.status,
+    ]),
+  );
 };
 
 export const applicationStatus = async (jobId: string): Promise<string> =>
   (await applicationStatuses([jobId])).get(jobId) ?? "not_applied";
 
-export const serializeJob = (job: Record<string, any>, applicationStatus?: string) => ({
+export const serializeJob = (
+  job: Record<string, any>,
+  applicationStatus?: string,
+) => ({
   ...job,
   applicationStatus: applicationStatus ?? "not_applied",
   ...(job.reviewStatus ? { reviewStatus: job.reviewStatus } : {}),
-  freshness: evaluateFreshness({ postedDate: job.postedDate, updatedDate: job.updatedDate }),
+  freshness: evaluateFreshness({
+    postedDate: job.postedDate,
+    updatedDate: job.updatedDate,
+  }),
   openStatus: job.match?.openStatus ?? "unknown",
   match: job.match ?? {},
 });
@@ -46,11 +57,18 @@ export const listJobs: RequestHandler = async (request, response, next) => {
         .lean(),
       JobModel.countDocuments(filter),
     ]);
-    const statuses = await applicationStatuses(jobs.map((job) => String(job._id)));
+    const statuses = await applicationStatuses(
+      jobs.map((job) => String(job._id)),
+    );
     response.json({
       success: true,
       data: {
-        jobs: jobs.map((job) => serializeJob({ ...job, id: String(job._id) }, statuses.get(String(job._id)))),
+        jobs: jobs.map((job) =>
+          serializeJob(
+            { ...job, id: String(job._id) },
+            statuses.get(String(job._id)),
+          ),
+        ),
         pagination: {
           page: query.page,
           limit: query.limit,
@@ -79,7 +97,12 @@ export const getJob: RequestHandler = async (request, response, next) => {
     const statuses = await applicationStatuses([String(job._id)]);
     response.json({
       success: true,
-      data: { job: serializeJob({ ...job, id: String(job._id) }, statuses.get(String(job._id))) },
+      data: {
+        job: serializeJob(
+          { ...job, id: String(job._id) },
+          statuses.get(String(job._id)),
+        ),
+      },
     });
   } catch (error) {
     next(error);
@@ -90,7 +113,19 @@ export const stats: RequestHandler = async (_request, response, next) => {
   try {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    const [total, fresh, apply, review, skip, high, medium, low, average, discoveredToday, alreadyApplied] = await Promise.all([
+    const [
+      total,
+      fresh,
+      apply,
+      review,
+      skip,
+      high,
+      medium,
+      low,
+      average,
+      discoveredToday,
+      alreadyApplied,
+    ] = await Promise.all([
       JobModel.countDocuments(),
       JobModel.countDocuments(buildFreshnessFilter("fresh")),
       JobModel.countDocuments({ "match.decision": "APPLY" }),
@@ -99,9 +134,26 @@ export const stats: RequestHandler = async (_request, response, next) => {
       JobModel.countDocuments({ "match.confidence": "high" }),
       JobModel.countDocuments({ "match.confidence": "medium" }),
       JobModel.countDocuments({ "match.confidence": "low" }),
-      JobModel.aggregate([{ $match: { $or: [{ "match.matchScore": { $type: "number" } }, { "match.score": { $type: "number" } }] } }, { $project: { value: { $ifNull: ["$match.matchScore", "$match.score"] } } }, { $group: { _id: null, value: { $avg: "$value" } } }]),
+      JobModel.aggregate([
+        {
+          $match: {
+            $or: [
+              { "match.matchScore": { $type: "number" } },
+              { "match.score": { $type: "number" } },
+            ],
+          },
+        },
+        {
+          $project: {
+            value: { $ifNull: ["$match.matchScore", "$match.score"] },
+          },
+        },
+        { $group: { _id: null, value: { $avg: "$value" } } },
+      ]),
       JobModel.countDocuments({ discoveredDate: { $gte: startOfDay } }),
-      ApplicationModel.countDocuments({ status: { $in: PROCESSED_APPLICATION_STATUSES } }),
+      ApplicationModel.countDocuments({
+        status: { $in: PROCESSED_APPLICATION_STATUSES },
+      }),
     ]);
     response.json({
       success: true,
@@ -124,26 +176,36 @@ export const stats: RequestHandler = async (_request, response, next) => {
   }
 };
 
-const updateReviewStatus = (status: "reviewed" | "skipped"): RequestHandler => async (request, response, next) => {
-  try {
-    if (!isValidObjectId(request.params.id)) {
-      notFound(response);
-      return;
+const updateReviewStatus =
+  (status: "reviewed" | "skipped"): RequestHandler =>
+  async (request, response, next) => {
+    try {
+      if (!isValidObjectId(request.params.id)) {
+        notFound(response);
+        return;
+      }
+      const job = await JobModel.findByIdAndUpdate(
+        request.params.id,
+        { $set: { reviewStatus: status, reviewedAt: new Date() } },
+        { new: true },
+      ).lean();
+      if (!job) {
+        notFound(response);
+        return;
+      }
+      response.json({
+        success: true,
+        data: {
+          job: serializeJob(
+            { ...job, id: String(job._id) },
+            await applicationStatus(String(job._id)),
+          ),
+        },
+      });
+    } catch (error) {
+      next(error);
     }
-    const job = await JobModel.findByIdAndUpdate(
-      request.params.id,
-      { $set: { reviewStatus: status, reviewedAt: new Date() } },
-      { new: true },
-    ).lean();
-    if (!job) {
-      notFound(response);
-      return;
-    }
-    response.json({ success: true, data: { job: serializeJob({ ...job, id: String(job._id) }, await applicationStatus(String(job._id))) } });
-  } catch (error) {
-    next(error);
-  }
-};
+  };
 
 export const markReviewed = updateReviewStatus("reviewed");
 export const markSkipped = updateReviewStatus("skipped");
