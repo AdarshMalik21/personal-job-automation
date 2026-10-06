@@ -6,8 +6,12 @@ import { runJobDiscovery } from "../modules/jobs/services/jobDiscovery.js";
 
 export type WorkerHandlers = Record<string, (job: QueueJob) => Promise<void>>;
 
+export const runScheduledJobDiscovery = (
+  discover: (dependencies: { validateApplicationUrls: boolean }) => Promise<unknown> = runJobDiscovery,
+) => discover({ validateApplicationUrls: true });
+
 export const discoveryHandlers = (
-  discover: () => Promise<unknown> = runJobDiscovery,
+  discover: () => Promise<unknown> = runScheduledJobDiscovery,
 ): WorkerHandlers => ({
   [JOB_DISCOVERY]: async () => {
     await discover();

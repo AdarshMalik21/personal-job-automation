@@ -8,7 +8,7 @@ import type { RawJobInput } from "../../modules/jobs/types/rawJob.js";
 import { JobQueue } from "../../queue/jobQueue.js";
 import { MemoryQueueCommands } from "../../queue/memoryQueue.js";
 import { JOB_DISCOVERY } from "../../queue/types.js";
-import { discoveryHandlers, processNextJob, runWorkerLoop } from "../workerRuntime.js";
+import { discoveryHandlers, processNextJob, runScheduledJobDiscovery, runWorkerLoop } from "../workerRuntime.js";
 
 const rawJob = (): RawJobInput => ({
   source: "greenhouse",
@@ -71,6 +71,20 @@ describe("job discovery worker", () => {
     assert.equal(saved.length, 1);
     assert.match(saved[0] ?? "", /^Full Stack Developer:/);
     assert.equal((await queue.get((await commands.list("queue:pending"))[0] ?? "")) , null);
+  });
+
+  it("requests application URL validation from the scheduled discovery handler", async () => {
+    const received: boolean[] = [];
+    const record = async (dependencies: { validateApplicationUrls: boolean }) => {
+      received.push(dependencies.validateApplicationUrls);
+    };
+    await runScheduledJobDiscovery(record);
+    const commands = new MemoryQueueCommands();
+    const queue = new JobQueue(commands);
+    await queue.enqueue(JOB_DISCOVERY, { scheduledFor: "2026-10-06" });
+    const outcome = await processNextJob(queue, discoveryHandlers(() => runScheduledJobDiscovery(record)));
+    assert.equal(outcome, "completed");
+    assert.deepEqual(received, [true, true]);
   });
 
   it("retries a failed discovery job and can shut down after the current job", async () => {
