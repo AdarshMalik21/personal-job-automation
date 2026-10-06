@@ -3,7 +3,14 @@ import { isIP } from "node:net";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import type { CandidateProfile, Job } from "@personal-job-automation/shared/types";
 import { mapApplicationField } from "./applicationFormMapper.js";
-import { inspectApplicationFields, pageText } from "./applicationPageInspector.js";
+import {
+  hasCaptchaFrame,
+  inspectApplicationFields,
+  pageText,
+  selectApplicationFrame,
+  waitForApplicationFrame,
+  type ApplicationSurface,
+} from "./applicationPageInspector.js";
 import type { BrowserRunResult, DetectedApplicationField } from "./browserRunTypes.js";
 import type { PreparationResult } from "./types.js";
 
@@ -27,7 +34,7 @@ const finalButtonPattern = /^\s*(submit(?: application)?|apply(?: now)?|finish(?
 const navigationButtonPattern =
   /^\s*(next(?: step)?|continue(?: to application| application)?|save\s*(?:&|and)\s*continue|proceed|review(?: application)?|previous|back)\s*$/i;
 const statusFromPage = (text: string): BrowserRunResult["status"] | undefined => {
-  if (/captcha|cloudflare|security challenge/.test(text)) return "CAPTCHA_REQUIRED";
+  if (/\bcaptcha\b|cloudflare|security challenge/.test(text)) return "CAPTCHA_REQUIRED";
   if (/one time password|\botp\b/.test(text)) return "OTP_REQUIRED";
   if (/two factor|2fa|authenticator/.test(text)) return "TWO_FACTOR_REQUIRED";
   if (/\blog ?in\b|sign in|password/.test(text)) return "LOGIN_REQUIRED";
@@ -77,7 +84,7 @@ const filePath = async (candidatePath: string | undefined): Promise<string | und
 
 const cssEscape = (value: string) => value.replace(/([!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, "\\$1");
 
-const fieldLocator = (page: Page, field: DetectedApplicationField) => {
+const fieldLocator = (page: ApplicationSurface, field: DetectedApplicationField) => {
   if (field.label && typeof (page as Page & { getByLabel?: unknown }).getByLabel === "function") {
     const labelled = page.getByLabel(field.label, { exact: true });
     if (field.id || field.name) return labelled;
@@ -92,7 +99,7 @@ const count = async (locator: { count?: () => Promise<number> }) =>
 export const isFinalSubmissionControl = (name: string): boolean =>
   finalButtonPattern.test(name.trim()) && !navigationButtonPattern.test(name.trim());
 
-const submitControlNames = async (page: Page): Promise<string[]> => {
+const submitControlNames = async (page: ApplicationSurface): Promise<string[]> => {
   const controls = page.locator('button[type="submit"], input[type="submit"]');
   if (typeof (controls as { evaluateAll?: unknown }).evaluateAll !== "function") return [];
   return controls.evaluateAll((elements) =>
@@ -165,6 +172,7 @@ export const runApplication = async (
     await page
       .waitForSelector("input, textarea, select", { state: "attached", timeout: 10_000 })
       .catch(() => undefined);
+    await waitForApplicationFrame(page);
     return await fillObservedPage(page, input);
   } catch (error) {
     if (hooks.isStopped?.()) {
@@ -197,8 +205,8 @@ export const fillObservedPage = async (
   page: Page,
   input: BrowserRunnerInput,
   dependencies: {
-    inspectFields?: (page: Page) => Promise<DetectedApplicationField[]>;
-    getPageText?: (page: Page) => Promise<string>;
+    inspectFields?: (page: ApplicationSurface) => Promise<DetectedApplicationField[]>;
+    getPageText?: (page: ApplicationSurface) => Promise<string>;
   } = {},
 ): Promise<BrowserRunResult> => {
   const inspectFields = dependencies.inspectFields ?? inspectApplicationFields;
@@ -216,15 +224,29 @@ export const fillObservedPage = async (
   for (let pageNumber = 0; pageNumber < MAX_APPLICATION_PAGES; pageNumber += 1) {
     result.pagesProcessed = pageNumber + 1;
     result.url = page.url();
-    const pageStatus = statusFromPage(await getPageText(page));
+    const surface = await selectApplicationFrame(page);
+    const main = typeof page.mainFrame === "function" ? page.mainFrame() : page;
+    const usingFrame = surface !== page && surface !== main;
+    if (usingFrame) {
+      result.applicationFrameDetected = true;
+      result.frameUrl = surface.url();
+    }
+    const pageStatus = statusFromPage(await getPageText(surface));
     if (pageStatus) return { ...result, status: pageStatus };
-    const fields = await inspectFields(page);
+    const fields = await inspectFields(surface);
+    if (fields.length === 0 && !usingFrame && hasCaptchaFrame(page)) {
+      return {
+        ...result,
+        status: "CAPTCHA_REQUIRED",
+        reason: "Security challenge frame detected; it was not interacted with",
+      };
+    }
     result.fieldsDetected += fields.length;
     const mappings = fields.map((field) =>
       mapApplicationField(field, input.candidate, input.preparation.generatedAnswers),
     );
     for (const mapping of mappings) {
-      const locator = fieldLocator(page, mapping.field);
+      const locator = fieldLocator(surface, mapping.field);
       if (mapping.value === undefined || mapping.field.type === "checkbox" ||
         (mapping.field.type === "radio" && mapping.value === undefined)) {
         result.fieldsSkipped.push(mapping.field.elementId);
@@ -257,11 +279,11 @@ export const fillObservedPage = async (
         if (field.required) result.reviewItems.push({ reason: "Required prepared file is unavailable", field });
         continue;
       }
-      await fieldLocator(page, field).setInputFiles(path);
+      await fieldLocator(surface, field).setInputFiles(path);
       result.uploads.push(field.elementId);
     }
-    const submit = page.getByRole("button", { name: finalButtonPattern });
-    const namedSubmitControls = await submitControlNames(page);
+    const submit = surface.getByRole("button", { name: finalButtonPattern });
+    const namedSubmitControls = await submitControlNames(surface);
     if (
       (await count(submit)) ||
       namedSubmitControls.some((name) => isFinalSubmissionControl(name))
@@ -273,22 +295,24 @@ export const fillObservedPage = async (
       };
     }
     if (result.reviewItems.length) return { ...result, status: "PAUSED_FOR_REVIEW" };
-    const next = page.getByRole("button", { name: navigationButtonPattern });
+    const next = surface.getByRole("button", { name: navigationButtonPattern });
     if (!(await count(next))) return result;
     const beforeUrl = page.url();
-    const beforeText = await getPageText(page);
+    const beforeFrameUrl = surface.url();
+    const beforeText = await getPageText(surface);
     await next.click();
     try {
-      if (typeof page.waitForLoadState === "function") {
-        await page.waitForLoadState("domcontentloaded", { timeout: 3_000 });
-      } else {
-        await page.waitForTimeout(300);
+      if (typeof surface.waitForLoadState === "function") {
+        await surface.waitForLoadState("domcontentloaded", { timeout: 3_000 });
+      } else if (typeof surface.waitForTimeout === "function") {
+        await surface.waitForTimeout(300);
       }
     } catch {
-      await page.waitForTimeout(300);
+      if (typeof surface.waitForTimeout === "function") await surface.waitForTimeout(300);
     }
-    const afterText = await getPageText(page);
-    if (page.url() === beforeUrl && afterText === beforeText) {
+    const afterSurface = await selectApplicationFrame(page);
+    const afterText = await getPageText(afterSurface);
+    if (page.url() === beforeUrl && afterSurface.url() === beforeFrameUrl && afterText === beforeText) {
       return { ...result, status: "PAUSED_FOR_REVIEW", reason: "Continue action could not be verified" };
     }
   }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { chromium } from "playwright";
 import {
   fillObservedPage,
   isFinalSubmissionControl,
@@ -275,4 +276,225 @@ describe("application browser runner", () => {
     assert.equal(nextClicks, 1);
     assert.equal(submitClicks, 0);
   });
+
+  it("fills fields inside the embedded application frame", async () => {
+    const fields: DetectedApplicationField[] = [
+      { elementId: "first", type: "text", id: "first-name", label: "First Name", required: true, options: [] },
+      { elementId: "email", type: "email", id: "email", label: "Email", required: true, options: [] },
+    ];
+    const { page: application } = pageWith(fields);
+    const seen: string[] = [];
+    const { host } = hostWithFrames(application, [
+      { url: "https://www.recaptcha.net/recaptcha/enterprise/anchor", name: "a-recaptcha", controls: 2 },
+      { url: "https://cdn.example.test/analytics", controls: 4 },
+    ]);
+    const result = await fillObservedPage(host as never, input(), {
+      inspectFields: async (surface) => {
+        seen.push(surface.url());
+        return surface.url().includes("job_app") ? fields : [];
+      },
+      getPageText: async () => "application form",
+    });
+    assert.equal(result.applicationFrameDetected, true);
+    assert.match(result.frameUrl ?? "", /job-boards\.greenhouse\.io\/embed\/job_app/);
+    assert.deepEqual(result.fieldsFilled, ["first", "email"]);
+    assert.deepEqual(seen, ["https://job-boards.greenhouse.io/embed/job_app?token=7993984"]);
+  });
+
+  it("follows Continue inside the application frame", async () => {
+    let step = 0;
+    let text = "application step";
+    const application = {
+      url: () => "https://job-boards.greenhouse.io/embed/job_app?token=7993984",
+      name: () => "grnhse_iframe",
+      locator: () => ({ count: async () => 1, evaluateAll: async () => [] }),
+      getByRole: (_role: string, options: { name: RegExp }) => ({
+        count: async () => (step === 0 && options.name.test("Continue") ? 1 : 0),
+        click: async () => {
+          step += 1;
+          text = "next application step";
+        },
+      }),
+      waitForTimeout: async () => undefined,
+    };
+    const { host } = hostWithFrames(application);
+    const result = await fillObservedPage(host as never, input(), {
+      inspectFields: async () => [],
+      getPageText: async () => text,
+    });
+    assert.equal(step, 1);
+    assert.equal(result.pagesProcessed, 2);
+    assert.equal(result.status, "RUNNING");
+    assert.equal(result.applicationFrameDetected, true);
+  });
+
+  it("detects final submission inside the frame and does not click it", async () => {
+    let clicked = 0;
+    const application = {
+      url: () => "https://boards.greenhouse.io/embed/job_app?token=7993984",
+      name: () => "grnhse_iframe",
+      locator: (selector: string) => {
+        if (selector.includes("type=\"submit\"")) {
+          return { evaluateAll: async () => ["Submit Application"], count: async () => 1 };
+        }
+        return { count: async () => 1, evaluateAll: async () => [] };
+      },
+      getByRole: (_role: string, options: { name: RegExp }) => ({
+        count: async () => (options.name.test("Submit Application") ? 1 : 0),
+        click: async () => {
+          clicked += 1;
+        },
+      }),
+      waitForTimeout: async () => undefined,
+    };
+    const { host } = hostWithFrames(application);
+    const result = await fillObservedPage(host as never, input(), {
+      inspectFields: async () => [],
+      getPageText: async () => "review application",
+    });
+    assert.equal(clicked, 0);
+    assert.equal(result.status, "READY_FOR_SUBMISSION");
+    assert.match(result.reason ?? "", /not clicked/);
+    assert.match(result.frameUrl ?? "", /embed\/job_app/);
+  });
+
+  it("does not treat a captcha frame as the application form", async () => {
+    let captchaInspected = false;
+    const captcha = {
+      url: () => "https://www.recaptcha.net/recaptcha/enterprise/anchor",
+      name: () => "a-recaptcha",
+      locator: () => ({
+        count: async () => 1,
+        evaluateAll: async () => {
+          captchaInspected = true;
+          return [];
+        },
+        innerText: async () => "captcha",
+      }),
+      getByRole: () => ({
+        count: async () => 0,
+        click: async () => {
+          throw new Error("captcha frame must not be clicked");
+        },
+      }),
+    };
+    const host = {
+      url: () => "https://www.mongodb.com/careers/jobs/7993984",
+      mainFrame: () => host,
+      frames: () => [host, captcha],
+      locator: () => ({
+        count: async () => 0,
+        evaluateAll: async () => [],
+        innerText: async () => "careers",
+      }),
+      getByRole: () => ({
+        count: async () => 0,
+        click: async () => {
+          throw new Error("top page must not be clicked");
+        },
+      }),
+      waitForTimeout: async () => undefined,
+    };
+    const result = await fillObservedPage(host as never, input(), {
+      getPageText: async () => "careers",
+    });
+    assert.equal(captchaInspected, false);
+    assert.equal(result.fieldsDetected, 0);
+    assert.equal(result.applicationFrameDetected, undefined);
+    assert.equal(result.status, "CAPTCHA_REQUIRED");
+  });
+
+  it("fills, navigates, and stops before submit in a real embedded frame", async (t) => {
+    let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+    try {
+      browser = await chromium.launch({ headless: true });
+    } catch {
+      t.skip("Chromium is not installed");
+      return;
+    }
+    const page = await browser.newPage();
+    try {
+      await page.route("https://job-boards.greenhouse.io/**", (route) =>
+        route.fulfill({
+          contentType: "text/html",
+          body: `<!doctype html><html><body>
+            <label for="first_name">First Name</label>
+            <input id="first_name" name="first_name" required>
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" required>
+            <button type="button" id="next">Continue</button>
+            <script>
+              document.getElementById("next").addEventListener("click", () => {
+                document.body.innerHTML = '<label for="last_name">Last Name</label><input id="last_name" name="last_name" required><button type="submit" id="submit">Submit Application</button>';
+                document.getElementById("submit").addEventListener("click", () => { window.__submitted = true; });
+              });
+            </script>
+          </body></html>`,
+        }),
+      );
+      await page.route("https://www.recaptcha.net/**", (route) =>
+        route.fulfill({
+          contentType: "text/html",
+          body: "<html><body><input name='g-recaptcha-response'></body></html>",
+        }),
+      );
+      await page.setContent(`<iframe src="https://job-boards.greenhouse.io/embed/job_app?token=7993984"></iframe>
+        <iframe name="a-recaptcha" src="https://www.recaptcha.net/recaptcha/enterprise/anchor"></iframe>`);
+      await page.frameLocator("iframe[src*='job_app']").locator("#first_name").waitFor();
+      const result = await fillObservedPage(page, input());
+      const submitted = await page.frames()
+        .find((frame) => frame.url().includes("job_app"))
+        ?.evaluate(() => Boolean((window as Window & { __submitted?: boolean }).__submitted));
+      assert.equal(submitted, false);
+      assert.equal(result.applicationFrameDetected, true);
+      assert.match(result.frameUrl ?? "", /embed\/job_app/);
+      assert.equal(result.pagesProcessed, 2);
+      assert.equal(result.status, "READY_FOR_SUBMISSION");
+      assert.match(result.reason ?? "", /not clicked/);
+      assert.equal(result.fieldsFilled.length, 3);
+    } finally {
+      await browser.close();
+    }
+  });
 });
+
+const hostWithFrames = (
+  application: {
+    url?: () => string;
+    locator: (selector: string) => unknown;
+    getByRole: (role: string, options: { name: RegExp }) => { count: () => Promise<number>; click: () => Promise<void> };
+  },
+  extras: Array<{ url: string; name?: string; controls?: number }> = [],
+) => {
+  const applicationFrame = {
+    ...application,
+    name: () => "grnhse_iframe",
+    waitForTimeout: async () => undefined,
+    url: () => "https://job-boards.greenhouse.io/embed/job_app?token=7993984",
+  };
+  const extraFrames = extras.map((extra) => ({
+    url: () => extra.url,
+    name: () => extra.name ?? "",
+    locator: () => ({ count: async () => extra.controls ?? 0, evaluateAll: async () => [] }),
+    getByRole: () => ({
+      count: async () => 0,
+      click: async () => {
+        throw new Error("unrelated frame used");
+      },
+    }),
+  }));
+  const host = {
+    url: () => "https://www.mongodb.com/careers/jobs/7993984",
+    mainFrame: () => host,
+    frames: () => [host, ...extraFrames, applicationFrame],
+    locator: () => ({ count: async () => 0, evaluateAll: async () => [] }),
+    getByRole: () => ({
+      count: async () => 0,
+      click: async () => {
+        throw new Error("top page control used");
+      },
+    }),
+    waitForTimeout: async () => undefined,
+  };
+  return { host, applicationFrame };
+};

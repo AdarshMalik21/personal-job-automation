@@ -32,6 +32,8 @@ export type BrowserReviewItem = {
 export type BrowserRunResult = {
   status: BrowserRunStatus;
   url?: string;
+  frameUrl?: string;
+  applicationFrameDetected?: boolean;
   fieldsDetected: number;
   fieldsFilled: string[];
   fieldsSkipped: string[];
