@@ -10,6 +10,7 @@ logs/
 *.temp
 coverage/
 *.tsbuildinfo
+playwright/.cache/
 shared/types/*.js
 shared/types/*.js.map
 shared/types/*.d.ts

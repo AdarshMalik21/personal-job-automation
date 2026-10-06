@@ -24,6 +24,7 @@ const applicationPreparationSchema = new Schema(
     generatedAnswers: { type: [Schema.Types.Mixed], default: [] },
     missingInformation: { type: [String], default: [] },
     generationMetadata: { type: Schema.Types.Mixed, default: {} },
+    browserRun: { type: Schema.Types.Mixed, default: {} },
     preparedAt: Date,
   },
   { timestamps: true, strict: true },
