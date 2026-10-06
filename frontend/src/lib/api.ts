@@ -4,12 +4,14 @@ import type {
   Job,
 } from "@personal-job-automation/shared/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api";
+const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+const API_URL = configuredApiUrl || (process.env.NODE_ENV === "production" ? "" : "http://localhost:5000/api");
 
 const request = async <T>(
   path: string,
   options?: RequestInit,
 ): Promise<ApiResponse<T>> => {
+  if (!API_URL) throw new Error("NEXT_PUBLIC_API_URL is not configured");
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -211,6 +213,7 @@ export type ApplicationReview = {
 };
 
 const requestWithStatus = async <T>(path: string, options?: RequestInit): Promise<ApiResponse<T>> => {
+  if (!API_URL) throw new Error("NEXT_PUBLIC_API_URL is not configured");
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...options?.headers },

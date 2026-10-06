@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler } from "express";
+import { redactSecrets } from "../config/redact.js";
 
 export const errorHandler: ErrorRequestHandler = (
   error,
@@ -6,10 +7,8 @@ export const errorHandler: ErrorRequestHandler = (
   response,
   _next,
 ) => {
-  console.error(
-    "Unexpected request error:",
-    error instanceof Error ? error.message : error,
-  );
+  const safeMessage = redactSecrets(error instanceof Error ? error.message : "Something went wrong");
+  console.error("Unexpected request error:", safeMessage);
   const statusCode =
     typeof error === "object" && error !== null && "statusCode" in error
       ? Number(error.statusCode)
@@ -17,9 +16,7 @@ export const errorHandler: ErrorRequestHandler = (
   const message =
     process.env.NODE_ENV === "production" && statusCode >= 500
       ? "Something went wrong"
-      : error instanceof Error
-        ? error.message
-        : "Something went wrong";
+      : safeMessage;
 
   response.status(statusCode).json({ success: false, message });
 };
