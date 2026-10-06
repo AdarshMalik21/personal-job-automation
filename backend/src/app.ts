@@ -4,6 +4,7 @@ import { env } from "./config/env.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { authRoutes } from "./routes/authRoutes.js";
+import { applicationRoutes } from "./routes/applicationRoutes.js";
 import { dashboardRoutes } from "./routes/dashboardRoutes.js";
 import { healthRoutes } from "./routes/healthRoutes.js";
 import { jobRoutes } from "./routes/jobRoutes.js";
@@ -15,6 +16,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(requestLogger);
 app.use("/api", healthRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/applications", applicationRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use((_request, response) => {
