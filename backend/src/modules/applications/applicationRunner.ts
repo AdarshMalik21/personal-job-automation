@@ -24,6 +24,8 @@ export type BrowserRunnerInput = {
 const defaultBrowserFactory: BrowserFactory = () => chromium.launch({ headless: true });
 const MAX_APPLICATION_PAGES = 10;
 const finalButtonPattern = /^\s*(submit(?: application)?|apply(?: now)?|finish|complete(?: application)?|send application)\s*$/i;
+const navigationButtonPattern =
+  /^\s*(next(?: step)?|continue(?: to application| application)?|save\s*(?:&|and)\s*continue|proceed|review(?: application)?|previous|back)\s*$/i;
 const statusFromPage = (text: string): BrowserRunResult["status"] | undefined => {
   if (/captcha|cloudflare|security challenge/.test(text)) return "CAPTCHA_REQUIRED";
   if (/one time password|\botp\b/.test(text)) return "OTP_REQUIRED";
@@ -86,6 +88,21 @@ const fieldLocator = (page: Page, field: DetectedApplicationField) => {
 };
 const count = async (locator: { count?: () => Promise<number> }) =>
   typeof locator.count === "function" ? locator.count() : 0;
+
+export const isFinalSubmissionControl = (name: string): boolean =>
+  finalButtonPattern.test(name.trim()) && !navigationButtonPattern.test(name.trim());
+
+const submitControlNames = async (page: Page): Promise<string[]> => {
+  const controls = page.locator('button[type="submit"], input[type="submit"]');
+  if (typeof (controls as { evaluateAll?: unknown }).evaluateAll !== "function") return [];
+  return controls.evaluateAll((elements) =>
+    elements.map((element) =>
+      element instanceof HTMLInputElement
+        ? element.value
+        : element.textContent?.trim() ?? "",
+    ),
+  );
+};
 
 export const runApplication = async (
   input: BrowserRunnerInput,
@@ -241,8 +258,11 @@ export const fillObservedPage = async (
       result.uploads.push(field.elementId);
     }
     const submit = page.getByRole("button", { name: finalButtonPattern });
-    const submitInput = page.locator('button[type="submit"], input[type="submit"]');
-    if ((await count(submit)) || (await count(submitInput))) {
+    const namedSubmitControls = await submitControlNames(page);
+    if (
+      (await count(submit)) ||
+      namedSubmitControls.some((name) => isFinalSubmissionControl(name))
+    ) {
       return {
         ...result,
         status: result.reviewItems.length ? "PAUSED_FOR_REVIEW" : "READY_FOR_SUBMISSION",
@@ -250,7 +270,7 @@ export const fillObservedPage = async (
       };
     }
     if (result.reviewItems.length) return { ...result, status: "PAUSED_FOR_REVIEW" };
-    const next = page.getByRole("button", { name: /\b(next|continue|save and continue)\b/i });
+    const next = page.getByRole("button", { name: navigationButtonPattern });
     if (!(await count(next))) return result;
     const beforeUrl = page.url();
     const beforeText = await getPageText(page);

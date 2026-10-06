@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { fillObservedPage, isSafeApplicationUrl, runApplication } from "../applicationRunner.js";
+import {
+  fillObservedPage,
+  isFinalSubmissionControl,
+  isSafeApplicationUrl,
+  runApplication,
+} from "../applicationRunner.js";
 import type { BrowserRunnerInput } from "../applicationRunner.js";
 import type { DetectedApplicationField } from "../browserRunTypes.js";
 import type { CandidateProfile, Job } from "@personal-job-automation/shared/types";
@@ -65,23 +70,40 @@ const locator = (value = "") => {
   };
 };
 
-const pageWith = (fields: DetectedApplicationField[], submit = false) => {
+type MockControl = { name: string; type?: "button" | "submit"; onClick?: () => void };
+
+const pageWith = (fields: DetectedApplicationField[], controls: MockControl[] = []) => {
   const locators = new Map(fields.map((field) => [field.elementId, locator()]));
   const page = {
     url: () => "https://jobs.example.test/apply",
+    waitForTimeout: async () => undefined,
     locator: (selector: string) => {
       const id = fields.find(
         (field) => (field.id && selector.includes(field.id)) || (field.name && selector.includes(field.name)),
       )?.elementId;
       return locators.get(id ?? "") ?? locator();
     },
-    getByRole: (_role: string, options: { name: RegExp }) => ({
-      count: async () => (submit && options.name.test("Submit Application") ? 1 : 0),
-      click: async () => {
-        throw new Error("submit must never be clicked");
-      },
-    }),
+    getByRole: (_role: string, options: { name: RegExp }) => {
+      const control = controls.find((item) => options.name.test(item.name));
+      return {
+        count: async () => (control ? 1 : 0),
+        click: async () => {
+          if (control?.onClick) control.onClick();
+          else throw new Error("submit must never be clicked");
+        },
+      };
+    },
   };
+  const originalLocator = page.locator;
+  page.locator = ((selector: string) => {
+    if (selector.includes("type=\"submit\"")) {
+      return {
+        evaluateAll: async () => controls.filter((control) => control.type === "submit").map((control) => control.name),
+        count: async () => controls.filter((control) => control.type === "submit").length,
+      };
+    }
+    return originalLocator(selector);
+  }) as typeof page.locator;
   return { page, locators };
 };
 
@@ -114,7 +136,7 @@ describe("application browser runner", () => {
   });
 
   it("detects submit and never clicks it", async () => {
-    const { page } = pageWith([], true);
+    const { page } = pageWith([], [{ name: "Submit Application", type: "submit" }]);
     const result = await fillObservedPage(page as never, input(), {
       inspectFields: async () => [],
       getPageText: async () => "review",
@@ -165,5 +187,92 @@ describe("application browser runner", () => {
       assert.equal(isSafeApplicationUrl(url), false, url);
     }
     assert.equal(isSafeApplicationUrl("https://jobs.example.com/apply"), true);
+  });
+
+  it("classifies submit-type navigation controls as navigation", () => {
+    for (const name of ["Continue", "Next", "Save & Continue", "Review Application"]) {
+      assert.equal(isFinalSubmissionControl(name), false, name);
+    }
+    for (const name of ["Submit Application", "Apply Now"]) {
+      assert.equal(isFinalSubmissionControl(name), true, name);
+    }
+  });
+
+  it("clicks submit-type Continue and Next navigation without stopping", async () => {
+    for (const name of ["Continue", "Next", "Save & Continue", "Review Application"]) {
+      let clicked = 0;
+      const { page } = pageWith([], [{ name, type: "submit", onClick: () => { clicked += 1; } }]);
+      const result = await fillObservedPage(page as never, input(), {
+        inspectFields: async () => [],
+        getPageText: async () => "changed application page",
+      });
+      assert.notEqual(result.status, "READY_FOR_SUBMISSION", name);
+      assert.equal(clicked, 1, name);
+    }
+  });
+
+  it("detects actual submit controls without clicking them", async () => {
+    for (const name of ["Submit Application", "Apply Now"]) {
+      let clicked = 0;
+      const { page } = pageWith([], [{ name, type: "submit", onClick: () => { clicked += 1; } }]);
+      const result = await fillObservedPage(page as never, input(), {
+        inspectFields: async () => [],
+        getPageText: async () => "review",
+      });
+      assert.equal(result.status, "READY_FOR_SUBMISSION", name);
+      assert.equal(clicked, 0, name);
+    }
+  });
+
+  it("processes an intermediate page before stopping at final submission", async () => {
+    let pageIndex = 0;
+    let nextClicks = 0;
+    let submitClicks = 0;
+    const pages = [
+      [
+        { elementId: "first", type: "text", id: "first-name", label: "First Name", required: true, options: [] },
+        { elementId: "email", type: "email", id: "email", label: "Email", required: true, options: [] },
+      ],
+      [{ elementId: "resume", type: "file", id: "resume", label: "Resume", required: false, options: [] }],
+    ] satisfies DetectedApplicationField[][];
+    const page = {
+      url: () => `https://jobs.example.test/apply/${pageIndex + 1}`,
+      locator: (selector: string) => {
+        if (selector.includes("type=\"submit\"")) {
+          const controls = pageIndex === 0
+            ? [{ name: "Continue", type: "submit" as const }]
+            : [{ name: "Submit Application", type: "submit" as const }];
+          return {
+            evaluateAll: async () => controls.map((control) => control.name),
+            count: async () => controls.length,
+          };
+        }
+        return locator();
+      },
+      getByLabel: () => locator(),
+      getByRole: (_role: string, options: { name: RegExp }) => {
+        const name = pageIndex === 0 ? "Continue" : "Submit Application";
+        return {
+          count: async () => (options.name.test(name) ? 1 : 0),
+          click: async () => {
+            if (pageIndex === 0) {
+              nextClicks += 1;
+              pageIndex = 1;
+            } else {
+              submitClicks += 1;
+            }
+          },
+        };
+      },
+      waitForTimeout: async () => undefined,
+    };
+    const result = await fillObservedPage(page as never, input(), {
+      inspectFields: async () => pages[pageIndex]!,
+      getPageText: async () => `page ${pageIndex + 1}`,
+    });
+    assert.equal(result.status, "READY_FOR_SUBMISSION");
+    assert.equal(result.pagesProcessed, 2);
+    assert.equal(nextClicks, 1);
+    assert.equal(submitClicks, 0);
   });
 });
