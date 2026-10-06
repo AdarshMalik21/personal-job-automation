@@ -16,6 +16,7 @@ import {
   buildFollowUpDraft,
   followUpDecision,
   planFollowUps,
+  resolveFollowUpEligibility,
   type TrackedApplication,
 } from "../applicationTracking.js";
 import { evaluateFollowUps } from "../followUpService.js";
@@ -233,6 +234,45 @@ describe("application tracking", () => {
     const followUp = (result.body?.data as { followUp: { status: string; draft: { missingInformation: string[] } } }).followUp;
     assert.equal(followUp.status, "needs_information");
     assert.deepEqual(followUp.draft.missingInformation, ["Candidate name", "Candidate email"]);
+  });
+
+  it("ignores a stale follow-up flag after the status is no longer eligible", async () => {
+    const draft = { subject: "Earlier follow-up", body: "Please keep this draft.", missingInformation: [] as string[] };
+    for (const status of ["interview", "offer", "rejected", "withdrawn"]) {
+      install({
+        _id: applicationId,
+        status,
+        appliedDate: daysAgo(10),
+        history: [{
+          type: "Follow-up required",
+          timestamp: daysAgo(1),
+          previousStatus: "submitted",
+          newStatus: "follow_up_required",
+          source: "system",
+        }],
+        followUp: {
+          eligible: true,
+          status: "required",
+          reason: "No status update for 5 days",
+          draft,
+        },
+      });
+      assert.equal(resolveFollowUpEligibility(state.application as TrackedApplication, now).eligible, false);
+      const info = response();
+      await getApplicationFollowUp(request(), info as never, (error) => { throw error; });
+      const viewed = (info.body?.data as { followUp: { eligible: boolean; reason: string; draft: { body: string } } }).followUp;
+      assert.equal(info.statusCode, 200, status);
+      assert.equal(viewed.eligible, false, status);
+      assert.match(viewed.reason, new RegExp(status, "i"));
+      assert.equal(viewed.draft.body, draft.body);
+      const prepare = response();
+      await prepareApplicationFollowUp(request({ draft: "Replacement draft" }), prepare as never, () => undefined);
+      assert.equal(prepare.statusCode, 409, status);
+      assert.match(String(prepare.body?.message), new RegExp(status, "i"));
+      assert.equal(state.updates.length, 0, status);
+      assert.equal((state.application?.history as unknown[]).length, 1, status);
+      assert.equal((state.application?.followUp as { draft: { body: string } }).draft.body, draft.body);
+    }
   });
 
   it("explains why a recent submission cannot be followed up", async () => {

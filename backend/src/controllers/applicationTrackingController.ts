@@ -6,7 +6,7 @@ import { JobModel } from "../models/Job.js";
 import {
   applicationAnalytics,
   buildFollowUpDraft,
-  followUpDecision,
+  resolveFollowUpEligibility,
   isUserTrackingStatus,
   statusChangeEvent,
   trackingSummary,
@@ -129,14 +129,14 @@ export const getApplicationFollowUp: RequestHandler = async (request, response, 
       return;
     }
     const record = tracked(context.application as unknown as Record<string, unknown>);
-    const decision = followUpDecision(record);
+    const decision = resolveFollowUpEligibility(record);
     const followUp = (context.application.followUp ?? {}) as FollowUpRecord;
     response.json({
       success: true,
       data: {
         followUp: {
-          eligible: decision.eligible || Boolean(followUp.eligible),
-          reason: followUp.reason ?? decision.reason,
+          eligible: decision.eligible,
+          reason: decision.reason,
           eligibleAt: followUp.eligibleAt,
           draft: followUp.draft,
           status: followUp.status ?? (decision.eligible ? "required" : "none"),
@@ -161,9 +161,9 @@ export const prepareApplicationFollowUp: RequestHandler = async (request, respon
       return;
     }
     const record = tracked(context.application as unknown as Record<string, unknown>);
-    const decision = followUpDecision(record);
+    const decision = resolveFollowUpEligibility(record);
     const existing = (context.application.followUp ?? {}) as FollowUpRecord;
-    if (!decision.eligible && !existing.eligible) {
+    if (!decision.eligible) {
       response.status(409).json({ success: false, message: decision.reason });
       return;
     }

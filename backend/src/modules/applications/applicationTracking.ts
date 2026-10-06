@@ -159,6 +159,17 @@ export const followUpDecision = (
   return { eligible: true, reason: "No status update for 5 days" };
 };
 
+export const resolveFollowUpEligibility = (
+  application: TrackedApplication,
+  now = new Date(),
+): { eligible: boolean; reason: string } => {
+  const decision = followUpDecision(application, now);
+  return {
+    eligible: decision.eligible,
+    reason: decision.eligible ? (application.followUp?.reason || decision.reason) : decision.reason,
+  };
+};
+
 export type FollowUpPlan = {
   id: unknown;
   eligibleAt: Date;
