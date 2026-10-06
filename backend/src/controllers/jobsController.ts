@@ -9,6 +9,7 @@ import {
   parseJobListQuery,
   type JobListQuery,
 } from "../services/jobQuery.js";
+import { trackingSummary, type TrackedApplication } from "../modules/applications/applicationTracking.js";
 import { PROCESSED_APPLICATION_STATUSES } from "../services/jobApplicationStatus.js";
 
 const notFound = (response: Parameters<RequestHandler>[1]) => {
@@ -33,9 +34,11 @@ export const applicationStatus = async (jobId: string): Promise<string> =>
 export const serializeJob = (
   job: Record<string, any>,
   applicationStatus?: string,
+  tracking?: ReturnType<typeof trackingSummary>,
 ) => ({
   ...job,
-  applicationStatus: applicationStatus ?? "not_applied",
+  applicationStatus: applicationStatus ?? tracking?.status ?? "not_applied",
+  ...(tracking ? { tracking } : {}),
   ...(job.reviewStatus ? { reviewStatus: job.reviewStatus } : {}),
   freshness: evaluateFreshness({
     postedDate: job.postedDate,
@@ -45,30 +48,42 @@ export const serializeJob = (
   match: job.match ?? {},
 });
 
+const applicationRecords = async (jobIds: string[]) => {
+  const applications = await ApplicationModel.find({ jobId: { $in: jobIds } })
+    .select("jobId status appliedDate updatedAt history followUp")
+    .lean();
+  return new Map(applications.map((application) => {
+    const summary = trackingSummary(application as TrackedApplication);
+    return [String(application.jobId), { status: application.status, tracking: summary }] as const;
+  }));
+};
+
 export const listJobs: RequestHandler = async (request, response, next) => {
   try {
     const query = parseJobListQuery(request.query);
     const filter = buildJobFilter(query);
+    const applicationIds = query.applicationStatus
+      ? await ApplicationModel.find({ status: query.applicationStatus }).distinct("jobId")
+      : undefined;
+    const listFilter = applicationIds
+      ? Object.keys(filter).length ? { $and: [filter, { _id: { $in: applicationIds } }] } : { _id: { $in: applicationIds } }
+      : filter;
     const [jobs, total] = await Promise.all([
-      JobModel.find(filter)
+      JobModel.find(listFilter)
         .sort(query.sort)
         .skip((query.page - 1) * query.limit)
         .limit(query.limit)
         .lean(),
-      JobModel.countDocuments(filter),
+      JobModel.countDocuments(listFilter),
     ]);
-    const statuses = await applicationStatuses(
-      jobs.map((job) => String(job._id)),
-    );
+    const records = await applicationRecords(jobs.map((job) => String(job._id)));
     response.json({
       success: true,
       data: {
-        jobs: jobs.map((job) =>
-          serializeJob(
-            { ...job, id: String(job._id) },
-            statuses.get(String(job._id)),
-          ),
-        ),
+        jobs: jobs.map((job) => {
+          const record = records.get(String(job._id));
+          return serializeJob({ ...job, id: String(job._id) }, record?.status, record?.tracking);
+        }),
         pagination: {
           page: query.page,
           limit: query.limit,
@@ -94,14 +109,12 @@ export const getJob: RequestHandler = async (request, response, next) => {
       notFound(response);
       return;
     }
-    const statuses = await applicationStatuses([String(job._id)]);
+    const records = await applicationRecords([String(job._id)]);
+    const record = records.get(String(job._id));
     response.json({
       success: true,
       data: {
-        job: serializeJob(
-          { ...job, id: String(job._id) },
-          statuses.get(String(job._id)),
-        ),
+        job: serializeJob({ ...job, id: String(job._id) }, record?.status, record?.tracking),
       },
     });
   } catch (error) {

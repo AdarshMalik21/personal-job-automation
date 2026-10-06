@@ -9,6 +9,7 @@ import { submissionRuntime } from "../modules/applications/applicationSubmission
 import { selectApplicationFrame } from "../modules/applications/applicationPageInspector.js";
 import { writeApplicationField } from "../modules/applications/applicationRunner.js";
 import type { ReviewedApplicationField } from "../modules/applications/browserRunTypes.js";
+import { submissionHistoryEvent } from "../modules/applications/applicationTracking.js";
 import { evaluateFreshness } from "../modules/jobs/services/freshness.js";
 
 const notFound = (response: Parameters<RequestHandler>[1], message: string) => {
@@ -379,15 +380,24 @@ export const submitReviewedApplication: RequestHandler = async (request, respons
           : attempt.status === "CANCELLED"
             ? "cancelled"
             : "submission_failed";
+      const attemptedAt = new Date();
       await ApplicationModel.findOneAndUpdate(
         { jobId: context.job._id, candidateProfileId: context.candidate._id },
         {
           $set: {
             status: applicationStatus,
             applicationUrl: context.job.officialApplicationUrl,
-            ...(attempt.status === "SUBMITTED" ? { appliedDate: new Date() } : {}),
-            submission: { ...attempt, attemptedAt: new Date() },
+            ...(attempt.status === "SUBMITTED" ? { appliedDate: attemptedAt } : {}),
+            submission: { ...attempt, attemptedAt },
             ...(attempt.status === "SUBMITTED" ? {} : { failure: attempt }),
+          },
+          $push: {
+            history: submissionHistoryEvent({
+              applicationStatus,
+              ...(context.application?.status ? { previousStatus: context.application.status } : {}),
+              ...(attempt.reason ? { reason: attempt.reason } : {}),
+              at: attemptedAt,
+            }),
           },
           $setOnInsert: { generatedAnswers: context.preparation.generatedAnswers ?? [], resumeUsed: {}, coverLetter: "", formFields: {} },
         },

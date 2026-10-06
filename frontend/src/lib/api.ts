@@ -56,6 +56,12 @@ export type DashboardJob = Job & {
   id: string;
   applicationStatus: string;
   reviewStatus?: "unreviewed" | "reviewed" | "skipped";
+  tracking?: {
+    status?: string;
+    appliedDate?: string;
+    lastStatusUpdate?: string;
+    followUpStatus?: string;
+  };
   match: JobMatchView;
   freshness?: {
     status: "fresh" | "stale" | "unknown";
@@ -99,6 +105,7 @@ export type JobListParams = {
   freshness?: string;
   minScore?: string;
   reviewStatus?: string;
+  applicationStatus?: string;
   sortBy?: string;
 };
 
@@ -235,6 +242,78 @@ export const cancelReviewedApplication = (token: string, jobId: string) =>
 
 export const stopBrowserRun = (token: string, jobId: string) =>
   requestWithStatus<{ status: string }>(`/applications/${encodeURIComponent(jobId)}/browser-run/stop`, {
+    ...withToken(token),
+    method: "POST",
+  });
+
+export type ApplicationHistoryEvent = {
+  type: string;
+  timestamp: string;
+  previousStatus?: string;
+  newStatus?: string;
+  note?: string;
+  source: "system" | "user";
+};
+
+export type ApplicationFollowUpView = {
+  eligible?: boolean;
+  reason?: string;
+  eligibleAt?: string;
+  status?: string;
+  draft?: { subject?: string; body?: string; missingInformation?: string[] };
+  preparedAt?: string;
+};
+
+export type ApplicationTracking = {
+  status?: string;
+  appliedDate?: string;
+  lastStatusUpdate?: string;
+  followUpStatus?: string;
+  applicationUrl?: string;
+  history?: ApplicationHistoryEvent[];
+  submission?: Record<string, unknown>;
+  followUp?: ApplicationFollowUpView;
+};
+
+export type ApplicationAnalytics = {
+  totalApplications: number;
+  submitted: number;
+  interviews: number;
+  offers: number;
+  rejected: number;
+  withdrawn: number;
+  followUpsRequired: number;
+  successfullySubmitted: number;
+  interviewRate: number;
+  offerRate: number;
+  rejectionRate: number;
+};
+
+export const getApplicationTracking = (token: string, jobId: string) =>
+  request<{ application: ApplicationTracking }>(`/applications/${encodeURIComponent(jobId)}/tracking`, withToken(token));
+
+export const updateApplicationStatus = (token: string, jobId: string, status: string, note: string) =>
+  requestWithStatus<{ application: ApplicationTracking }>(`/applications/${encodeURIComponent(jobId)}/status`, {
+    ...withToken(token),
+    method: "PATCH",
+    body: JSON.stringify({ status, note }),
+  });
+
+export const getApplicationFollowUp = (token: string, jobId: string) =>
+  request<{ followUp: ApplicationFollowUpView }>(`/applications/${encodeURIComponent(jobId)}/follow-up`, withToken(token));
+
+export const prepareApplicationFollowUp = (token: string, jobId: string, draft?: string) =>
+  requestWithStatus<{ followUp: ApplicationFollowUpView; sent: boolean }>(`/applications/${encodeURIComponent(jobId)}/follow-up`, {
+    ...withToken(token),
+    method: "POST",
+    body: JSON.stringify(draft ? { draft } : {}),
+  });
+
+export const getApplicationAnalytics = (token: string) =>
+  request<{ analytics: ApplicationAnalytics }>("/applications/analytics", withToken(token));
+
+export const evaluateFollowUps = (token: string) =>
+  requestWithStatus<{ updated: number }>("/applications/follow-ups/evaluate", {
     ...withToken(token),
     method: "POST",
   });

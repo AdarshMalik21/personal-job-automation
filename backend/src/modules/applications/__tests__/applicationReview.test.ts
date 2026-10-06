@@ -115,8 +115,14 @@ const install = (fields: ReviewedApplicationField[], browserStatus = "PAUSED_FOR
     return state.preparation;
   };
   (ApplicationModel as unknown as { findOne: unknown }).findOne = () => chain(state.application);
-  (ApplicationModel as unknown as { findOneAndUpdate: unknown }).findOneAndUpdate = async (_query: unknown, update: { $set: Record<string, unknown> }) => {
-    state.application = { ...(state.application ?? {}), ...update.$set };
+  (ApplicationModel as unknown as { findOneAndUpdate: unknown }).findOneAndUpdate = async (_query: unknown, update: { $set?: Record<string, unknown>; $push?: { history?: unknown } }) => {
+    const historyEvent = update.$push?.history;
+    const previousHistory = (state.application?.history as unknown[] | undefined) ?? [];
+    state.application = {
+      ...(state.application ?? {}),
+      ...update.$set,
+      ...(historyEvent ? { history: [...previousHistory, historyEvent] } : {}),
+    };
     return state.application;
   };
 };
@@ -444,6 +450,9 @@ describe("application review", () => {
     assert.equal(called, 1);
     assert.equal(result.body?.success, true);
     assert.equal(state.application?.status, "submitted");
+    const history = state.application?.history as Array<{ type: string; newStatus: string }>;
+    assert.equal(history[0]?.type, "Application submitted");
+    assert.equal(history[0]?.newStatus, "submitted");
   });
 
   it("does not report an unconfirmed click as success and does not retry it", async () => {
@@ -472,6 +481,9 @@ describe("application review", () => {
     await submitReviewedApplication(request({ approved: true }), first as never, () => undefined);
     assert.equal(first.body?.success, false);
     assert.equal(state.application?.status, "submission_unknown");
+    const unknownHistory = state.application?.history as Array<{ type: string; newStatus: string }>;
+    assert.equal(unknownHistory[0]?.newStatus, "submission_unknown");
+    assert.notEqual(unknownHistory[0]?.type, "Application submitted");
     const second = response();
     await submitReviewedApplication(request({ approved: true }), second as never, () => undefined);
     assert.equal(second.statusCode, 409);
@@ -500,6 +512,9 @@ describe("application review", () => {
     await submitReviewedApplication(request({ approved: true }), result as never, () => undefined);
     assert.equal(state.application?.status, "submission_failed");
     assert.equal((state.application?.submission as { clicked: boolean }).clicked, true);
+    const failedHistory = state.application?.history as Array<{ type: string; newStatus: string }>;
+    assert.equal(failedHistory[0]?.newStatus, "submission_failed");
+    assert.notEqual(failedHistory[0]?.type, "Application submitted");
   });
 
   it("rejects a second submission while one is in progress", async () => {

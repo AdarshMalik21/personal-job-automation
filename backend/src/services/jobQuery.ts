@@ -14,8 +14,25 @@ export type JobListQuery = {
   freshness?: "fresh" | "stale" | "unknown";
   minScore?: number;
   maxScore?: number;
+  applicationStatus?: string;
   sort: Record<string, 1 | -1>;
 };
+
+const applicationStatuses = new Set([
+  "prepared",
+  "ready_for_review",
+  "submitting",
+  "submitted",
+  "interview",
+  "offer",
+  "rejected",
+  "withdrawn",
+  "follow_up_required",
+  "submission_failed",
+  "submission_unknown",
+  "cancelled",
+  "failed",
+]);
 
 const decisions = new Set(["APPLY", "REVIEW", "SKIP"]);
 const reviewStatuses = new Set(["unreviewed", "reviewed", "skipped"]);
@@ -59,6 +76,7 @@ export const parseJobListQuery = (
   const freshness = value(input.freshness);
   const minScore = numberValue(input.minScore, "minScore");
   const maxScore = numberValue(input.maxScore, "maxScore");
+  const applicationStatus = value(input.applicationStatus);
   const sortBy = value(input.sortBy) ?? "score";
   const sortOrder = value(input.sortOrder) === "asc" ? 1 : -1;
   if (decision && !decisions.has(decision))
@@ -67,6 +85,8 @@ export const parseJobListQuery = (
     throw new Error("reviewStatus is invalid");
   if (freshness && !freshnessStatuses.has(freshness))
     throw new Error("freshness is invalid");
+  if (applicationStatus && !applicationStatuses.has(applicationStatus))
+    throw new Error("applicationStatus is invalid");
   const parsedDecision = decision as
     | Exclude<JobListQuery["decision"], undefined>
     | undefined;
@@ -87,6 +107,7 @@ export const parseJobListQuery = (
     ...(remoteStatus ? { remoteStatus } : {}),
     ...(location ? { location } : {}),
     ...(parsedFreshness ? { freshness: parsedFreshness } : {}),
+    ...(applicationStatus ? { applicationStatus } : {}),
     ...(minScore !== undefined ? { minScore } : {}),
     ...(maxScore !== undefined ? { maxScore } : {}),
     sort: Object.fromEntries(

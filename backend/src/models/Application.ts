@@ -38,6 +38,35 @@ const applicationSchema = new Schema(
     followUpDate: Date,
     followUpStatus: String,
     lastStatusCheck: Date,
+    history: {
+      type: [
+        {
+          type: { type: String, required: true },
+          timestamp: { type: Date, required: true },
+          previousStatus: String,
+          newStatus: String,
+          note: String,
+          source: { type: String, enum: ["system", "user"], required: true },
+        },
+      ],
+      default: [],
+    },
+    followUp: {
+      eligible: { type: Boolean, default: false },
+      eligibleAt: Date,
+      status: {
+        type: String,
+        enum: ["none", "required", "prepared", "needs_information"],
+        default: "none",
+      },
+      reason: String,
+      draft: {
+        subject: String,
+        body: String,
+        missingInformation: { type: [String], default: [] },
+      },
+      preparedAt: Date,
+    },
   },
   { timestamps: true, strict: true },
 );

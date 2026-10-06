@@ -153,6 +153,30 @@ export type Application = {
   followUpDate?: string;
   followUpStatus?: string;
   lastStatusCheck?: string;
+  history?: ApplicationHistoryEvent[];
+  followUp?: ApplicationFollowUp;
+};
+
+export type ApplicationHistoryEvent = {
+  type: string;
+  timestamp: string;
+  previousStatus?: string;
+  newStatus?: string;
+  note?: string;
+  source: "system" | "user";
+};
+
+export type ApplicationFollowUp = {
+  eligible?: boolean;
+  eligibleAt?: string;
+  status?: "none" | "required" | "prepared" | "needs_information";
+  reason?: string;
+  draft?: {
+    subject?: string;
+    body?: string;
+    missingInformation?: string[];
+  };
+  preparedAt?: string;
 };
 
 export type AuthSession = {

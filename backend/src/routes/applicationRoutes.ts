@@ -15,6 +15,14 @@ import {
   submitReviewedApplication,
   updateReviewField,
 } from "../controllers/applicationReviewController.js";
+import {
+  evaluateApplicationFollowUps,
+  getApplicationAnalytics,
+  getApplicationFollowUp,
+  getApplicationTracking,
+  prepareApplicationFollowUp,
+  updateApplicationStatus,
+} from "../controllers/applicationTrackingController.js";
 import { requireAuth } from "../middleware/auth.js";
 
 export const applicationRoutes = Router();
@@ -29,3 +37,9 @@ applicationRoutes.get("/:jobId/review", getReview);
 applicationRoutes.patch("/:jobId/review/fields", updateReviewField);
 applicationRoutes.post("/:jobId/submit", submitReviewedApplication);
 applicationRoutes.post("/:jobId/cancel", cancelReviewedApplication);
+applicationRoutes.get("/analytics", getApplicationAnalytics);
+applicationRoutes.post("/follow-ups/evaluate", evaluateApplicationFollowUps);
+applicationRoutes.get("/:jobId/tracking", getApplicationTracking);
+applicationRoutes.patch("/:jobId/status", updateApplicationStatus);
+applicationRoutes.get("/:jobId/follow-up", getApplicationFollowUp);
+applicationRoutes.post("/:jobId/follow-up", prepareApplicationFollowUp);
