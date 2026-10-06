@@ -272,15 +272,74 @@ describe("application review", () => {
     assert.equal(written, "Test Candidate");
   });
 
-  it("keeps the edit and reports an expired browser session", async () => {
-    install([field({ elementId: "preferred", label: "Preferred Name" })]);
+  it("leaves the stored field unchanged when the browser rejects the value", async () => {
+    install([field({ reviewStatus: "requires_review", label: "Preferred Name", id: "preferred_name", elementId: "preferred", currentValue: "Asha" })]);
+    let attempted = false;
+    browserSessions.hold({
+      jobId: String(jobId),
+      browser: { close: async () => undefined } as never,
+      context: { close: async () => undefined } as never,
+      page: {
+        getByLabel: () => ({
+          fill: async () => {
+            attempted = true;
+          },
+          inputValue: async () => "Asha",
+        }),
+      } as never,
+      createdAt: Date.now(),
+      submitting: false,
+      isStopped: () => false,
+      stop: () => undefined,
+    });
+    const result = response();
+    await updateReviewField(request({ elementId: "preferred", value: "ABC" }), result as never, () => undefined);
+    const saved = ((state.preparation.browserRun as { fields: ReviewedApplicationField[] }).fields)[0];
+    assert.equal(result.statusCode, 409);
+    assert.equal(result.body?.message, "The browser did not accept this value");
+    assert.equal(attempted, true);
+    assert.equal(saved?.currentValue, "Asha");
+    assert.equal(saved?.source, "candidate profile");
+    assert.equal(state.application, null);
+  });
+
+  it("leaves the stored field unchanged when browser synchronization throws", async () => {
+    install([field({ reviewStatus: "requires_review", label: "Preferred Name", id: "preferred_name", elementId: "preferred", currentValue: "Asha" })]);
+    browserSessions.hold({
+      jobId: String(jobId),
+      browser: { close: async () => undefined } as never,
+      context: { close: async () => undefined } as never,
+      page: {
+        getByLabel: () => ({
+          fill: async () => {
+            throw new Error("browser rejected the value");
+          },
+        }),
+      } as never,
+      createdAt: Date.now(),
+      submitting: false,
+      isStopped: () => false,
+      stop: () => undefined,
+    });
+    const result = response();
+    await updateReviewField(request({ elementId: "preferred", value: "ABC" }), result as never, () => undefined);
+    const saved = ((state.preparation.browserRun as { fields: ReviewedApplicationField[] }).fields)[0];
+    assert.equal(result.statusCode, 409);
+    assert.equal(result.body?.message, "The browser did not accept this value");
+    assert.equal(saved?.currentValue, "Asha");
+    assert.equal(state.application, null);
+  });
+
+  it("reports an expired browser session without storing the edit", async () => {
+    install([field({ elementId: "preferred", label: "Preferred Name", currentValue: "Asha" })]);
     const result = response();
     await updateReviewField(request({ elementId: "preferred", value: "Asha P." }), result as never, () => undefined);
     assert.equal(result.statusCode, 409);
     assert.equal(result.body?.message, "BROWSER_SESSION_EXPIRED");
     assert.equal(state.profileWrites, 0);
     const saved = ((state.preparation.browserRun as { fields: ReviewedApplicationField[] }).fields)[0];
-    assert.equal(saved?.currentValue, "Asha P.");
+    assert.equal(saved?.currentValue, "Asha");
+    assert.equal(state.application, null);
   });
 
   it("rejects submission without explicit approval", async () => {

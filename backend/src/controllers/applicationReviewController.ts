@@ -282,17 +282,25 @@ export const updateReviewField: RequestHandler = async (request, response, next)
     }
     const current = fields[index]!;
     const session = browserSessions.get(jobId);
-    let reviewStatus: ReviewedApplicationField["reviewStatus"] = "known";
-    let syncError: string | undefined;
-    if (session) {
-      try {
-        const surface = await selectApplicationFrame(session.page);
-        const verified = await writeApplicationField(surface, current, value);
-        reviewStatus = verified ? "filled" : "requires_review";
-      } catch (error) {
-        reviewStatus = "requires_review";
-        syncError = error instanceof Error ? error.message : "Browser field update failed";
-      }
+    if (!session) {
+      response.status(409).json({ success: false, message: "BROWSER_SESSION_EXPIRED" });
+      return;
+    }
+    let verified = false;
+    try {
+      const surface = await selectApplicationFrame(session.page);
+      verified = await writeApplicationField(surface, current, value);
+    } catch {
+      verified = false;
+    }
+    const reviewStatus = verified ? "filled" : "requires_review";
+    if (reviewStatus !== "filled") {
+      response.status(409).json({
+        success: false,
+        message: "The browser did not accept this value",
+        data: { sessionAvailable: true },
+      });
+      return;
     }
     fields[index] = { ...current, currentValue: value, source: "user", reviewStatus };
     await saveFields(
@@ -302,22 +310,6 @@ export const updateReviewField: RequestHandler = async (request, response, next)
       elementId,
       value,
     );
-    if (!session) {
-      response.status(409).json({
-        success: false,
-        message: "BROWSER_SESSION_EXPIRED",
-        data: { field: fields[index] },
-      });
-      return;
-    }
-    if (syncError) {
-      response.status(409).json({
-        success: false,
-        message: "The browser did not accept this value",
-        data: { field: fields[index], sessionAvailable: true },
-      });
-      return;
-    }
     response.json({ success: true, data: { field: fields[index], sessionAvailable: true } });
   } catch (error) {
     next(error);
