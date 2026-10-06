@@ -125,7 +125,11 @@ export type Job = {
 export type ApplicationStatus =
   | "prepared"
   | "ready_for_review"
+  | "submitting"
   | "submitted"
+  | "submission_failed"
+  | "submission_unknown"
+  | "cancelled"
   | "failed"
   | "rejected"
   | "interview"

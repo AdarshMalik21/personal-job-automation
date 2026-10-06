@@ -145,3 +145,96 @@ export const skipJob = (token: string, id: string) =>
     ...withToken(token),
     method: "PATCH",
   });
+
+export type ReviewField = {
+  elementId: string;
+  type: string;
+  label?: string;
+  required: boolean;
+  currentValue?: string;
+  source: string;
+  reviewStatus: string;
+};
+
+export type ApplicationReview = {
+  job: {
+    id: string;
+    title?: string;
+    company?: string;
+    location?: string;
+    source?: string;
+    officialApplicationUrl?: string;
+    description?: string;
+    freshness?: { status: string; reason: string };
+    matchScore?: number;
+    matchDecision?: string;
+    matchExplanation?: string[];
+    requiredSkills?: string[];
+  };
+  preparation: {
+    status?: string;
+    tailoredResume?: {
+      summary?: string;
+      skills?: string[];
+      experience?: Array<Record<string, unknown>>;
+      filePath?: string;
+    };
+    resumeChanges?: string[];
+    coverLetter?: { status?: string; content?: string; reason?: string };
+    generatedAnswers?: Array<{ question?: string; answer?: string; status?: string; source?: string }>;
+    missingInformation?: string[];
+    warnings?: string[];
+  };
+  browserRun: {
+    id?: string;
+    status?: string;
+    applicationUrl?: string;
+    pagesProcessed?: number;
+    fieldsDetected?: number;
+    fieldsFilled?: string[];
+    fields?: ReviewField[];
+    unresolvedFields?: ReviewField[];
+    finalControl?: string;
+    reason?: string;
+    sessionAvailable?: boolean;
+  };
+  application?: { status?: string };
+  canSubmit: boolean;
+  blockers: string[];
+};
+
+const requestWithStatus = async <T>(path: string, options?: RequestInit): Promise<ApiResponse<T>> => {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...options?.headers },
+  });
+  return (await response.json()) as ApiResponse<T>;
+};
+
+export const getApplicationReview = (token: string, jobId: string) =>
+  request<{ review: ApplicationReview }>(`/applications/${encodeURIComponent(jobId)}/review`, withToken(token));
+
+export const updateReviewField = (token: string, jobId: string, elementId: string, value: string) =>
+  requestWithStatus<{ field: ReviewField }>(`/applications/${encodeURIComponent(jobId)}/review/fields`, {
+    ...withToken(token),
+    method: "PATCH",
+    body: JSON.stringify({ elementId, value }),
+  });
+
+export const submitReviewedApplication = (token: string, jobId: string) =>
+  requestWithStatus<{ submission: { status: string; clicked: boolean; confirmationDetected: boolean; reason?: string } }>(
+    `/applications/${encodeURIComponent(jobId)}/submit`,
+    { ...withToken(token), method: "POST", body: JSON.stringify({ approved: true }) },
+  );
+
+export const cancelReviewedApplication = (token: string, jobId: string) =>
+  requestWithStatus<{ status: string }>(`/applications/${encodeURIComponent(jobId)}/cancel`, {
+    ...withToken(token),
+    method: "POST",
+  });
+
+export const stopBrowserRun = (token: string, jobId: string) =>
+  requestWithStatus<{ status: string }>(`/applications/${encodeURIComponent(jobId)}/browser-run/stop`, {
+    ...withToken(token),
+    method: "POST",
+  });

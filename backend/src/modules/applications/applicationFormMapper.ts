@@ -6,6 +6,7 @@ export type FieldMapping = {
   field: DetectedApplicationField;
   value?: string;
   confidence: "high" | "unknown";
+  source: "candidate profile" | "prepared answer" | "user" | "generated" | "browser-detected";
   reason?: string;
 };
 
@@ -14,17 +15,6 @@ const normalized = (value: string | undefined) =>
 
 const fieldText = (field: DetectedApplicationField) =>
   normalized([field.label, field.name, field.id, field.placeholder].filter(Boolean).join(" "));
-
-const exactAnswer = (
-  field: DetectedApplicationField,
-  answers: PreparedAnswer[],
-): string | undefined => {
-  const text = fieldText(field);
-  return answers.find((answer) => {
-    const question = normalized(answer.question);
-    return question === normalized(field.group) || text.includes(question);
-  })?.answer;
-};
 
 export const mapApplicationField = (
   field: DetectedApplicationField,
@@ -42,17 +32,28 @@ export const mapApplicationField = (
   const match = mappings.find(([pattern]) => pattern.test(text));
   if (match) {
     return match[1]
-      ? { field, value: match[1], confidence: "high" }
-      : { field, confidence: "unknown", reason: "Candidate value is missing" };
+      ? { field, value: match[1], confidence: "high", source: "candidate profile" }
+      : { field, confidence: "unknown", source: "browser-detected", reason: "Candidate value is missing" };
   }
-  const answer = exactAnswer(field, answers);
+  const prepared = answers.find((answer) => {
+    const question = normalized(answer.question);
+    return question === normalized(field.group) || text.includes(question);
+  });
+  const answer = prepared?.answer;
+  const preparedSource = prepared?.source === "user"
+    ? "user"
+    : prepared?.status === "generated"
+      ? "generated"
+      : "prepared answer";
   if (answer && field.type === "radio") {
     const option = normalized([field.label, field.value].filter(Boolean).join(" "));
     return normalized(answer) === option
-      ? { field, value: answer, confidence: "high" }
-      : { field, confidence: "unknown", reason: "A different radio option is the approved answer" };
+      ? { field, value: answer, confidence: "high", source: preparedSource }
+      : { field, confidence: "unknown", source: preparedSource, reason: "A different radio option is the approved answer" };
   }
-  if (answer && field.type !== "checkbox") return { field, value: answer, confidence: "high" };
+  if (answer && field.type !== "checkbox") {
+    return { field, value: answer, confidence: "high", source: preparedSource };
+  }
   if (
     /(salary|compensation|authorization|visa|sponsorship|notice|relocation|citizenship|gender|birth|criminal|disability|veteran)/.test(
       text,
@@ -61,12 +62,14 @@ export const mapApplicationField = (
     return {
       field,
       confidence: "unknown",
+      source: "browser-detected",
       reason: "Sensitive field requires explicit user-approved information",
     };
   }
   return {
     field,
     confidence: "unknown",
+    source: "browser-detected",
     reason: "Field meaning has no deterministic prepared mapping",
   };
 };

@@ -7,7 +7,22 @@ export type BrowserRunStatus =
   | "TWO_FACTOR_REQUIRED"
   | "MISSING_INFORMATION"
   | "READY_FOR_SUBMISSION"
-  | "FAILED";
+  | "FAILED"
+  | "SUBMITTING"
+  | "SUBMITTED"
+  | "SUBMISSION_FAILED"
+  | "SUBMISSION_UNKNOWN"
+  | "CANCELLED"
+  | "BROWSER_SESSION_EXPIRED";
+
+export type ReviewFieldSource =
+  | "candidate profile"
+  | "prepared answer"
+  | "user"
+  | "generated"
+  | "browser-detected";
+
+export type ReviewFieldStatus = "known" | "filled" | "missing" | "requires_review" | "unknown";
 
 export type DetectedApplicationField = {
   elementId: string;
@@ -29,16 +44,26 @@ export type BrowserReviewItem = {
   field?: DetectedApplicationField;
 };
 
+export type ReviewedApplicationField = DetectedApplicationField & {
+  currentValue?: string;
+  source: ReviewFieldSource;
+  reviewStatus: ReviewFieldStatus;
+};
+
 export type BrowserRunResult = {
   status: BrowserRunStatus;
+  runId?: string;
   url?: string;
   frameUrl?: string;
   applicationFrameDetected?: boolean;
   fieldsDetected: number;
   fieldsFilled: string[];
   fieldsSkipped: string[];
+  fields?: ReviewedApplicationField[];
+  finalControl?: string;
   uploads: string[];
   reviewItems: BrowserReviewItem[];
   reason?: string;
   pagesProcessed?: number;
+  stopped?: boolean;
 };

@@ -50,14 +50,16 @@ export const hasCaptchaFrame = (page: Page): boolean =>
   typeof page.frames === "function" &&
   page.frames().some((frame) => isCaptchaFrame(frame));
 
-export const waitForApplicationFrame = async (page: Page, timeoutMs = 10_000): Promise<void> => {
+export const waitForApplicationFrame = async (page: Page, timeoutMs = 15_000): Promise<void> => {
   if (typeof page.frames !== "function") return;
-  const deadline = Date.now() + timeoutMs;
+  const started = Date.now();
+  const deadline = started + timeoutMs;
   while (Date.now() < deadline) {
     const main = typeof page.mainFrame === "function" ? page.mainFrame() : page;
     const children = page.frames().filter((frame) => frame !== main && !isCaptchaFrame(frame));
     if (children.some((frame) => isEmbeddedApplicationFrameUrl(frame.url()))) return;
-    if (children.length === 0 && (await controlCount(page)) > 0) return;
+    const graceElapsed = Date.now() - started > 3_000;
+    if (graceElapsed && children.length === 0 && (await controlCount(page)) > 0) return;
     if (typeof page.waitForTimeout === "function") await page.waitForTimeout(250);
     else await new Promise((resolve) => setTimeout(resolve, 250));
   }

@@ -9,6 +9,12 @@ import {
   getBrowserRun,
   stopBrowserRun,
 } from "../controllers/applicationBrowserController.js";
+import {
+  cancelReviewedApplication,
+  getReview,
+  submitReviewedApplication,
+  updateReviewField,
+} from "../controllers/applicationReviewController.js";
 import { requireAuth } from "../middleware/auth.js";
 
 export const applicationRoutes = Router();
@@ -19,3 +25,7 @@ applicationRoutes.patch("/:jobId/preparation", updatePreparation);
 applicationRoutes.post("/:jobId/browser-run", browserRun);
 applicationRoutes.get("/:jobId/browser-run", getBrowserRun);
 applicationRoutes.post("/:jobId/browser-run/stop", stopBrowserRun);
+applicationRoutes.get("/:jobId/review", getReview);
+applicationRoutes.patch("/:jobId/review/fields", updateReviewField);
+applicationRoutes.post("/:jobId/submit", submitReviewedApplication);
+applicationRoutes.post("/:jobId/cancel", cancelReviewedApplication);

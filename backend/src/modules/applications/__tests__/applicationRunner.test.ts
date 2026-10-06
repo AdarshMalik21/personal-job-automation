@@ -456,6 +456,45 @@ describe("application browser runner", () => {
       await browser.close();
     }
   });
+
+  it("retains the browser for review and does not submit on its own", async () => {
+    let closed = false;
+    let clicked = 0;
+    const page = {
+      url: () => "https://jobs.example.test/apply",
+      goto: async () => undefined,
+      waitForSelector: async () => undefined,
+      waitForTimeout: async () => undefined,
+      locator: (selector: string) => {
+        if (selector.includes("type=\"submit\"")) {
+          return { evaluateAll: async () => ["Submit Application"], count: async () => 1 };
+        }
+        if (selector === "body") return { innerText: async () => "application review" };
+        return { evaluateAll: async () => [], count: async () => 0, innerText: async () => "" };
+      },
+      getByRole: () => ({
+        count: async () => 1,
+        click: async () => {
+          clicked += 1;
+        },
+      }),
+    };
+    const browser = {
+      newContext: async () => ({
+        newPage: async () => page,
+        close: async () => undefined,
+      }),
+      close: async () => {
+        closed = true;
+      },
+    };
+    const result = await runApplication(input(), async () => browser as never, { holdForReview: true });
+    assert.equal(result.status, "READY_FOR_SUBMISSION");
+    assert.equal(result.finalControl, "Submit Application");
+    assert.equal(clicked, 0);
+    assert.equal(closed, false);
+    await browser.close();
+  });
 });
 
 const hostWithFrames = (
