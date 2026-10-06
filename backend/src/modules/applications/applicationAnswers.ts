@@ -1,6 +1,7 @@
 import type { CandidateProfile, Job } from "@personal-job-automation/shared/types";
 import type { PreparationLlmProvider } from "./llmProvider.js";
 import type { PreparedAnswer } from "./types.js";
+import { validateGeneratedContent } from "./resumeTailoring.js";
 
 const value = (candidate: CandidateProfile, key: string): string | undefined => {
   if (key === "years") {
@@ -58,12 +59,14 @@ export const prepareApplicationAnswers = async (
     }
     const answer = (await provider.generateAnswer(question, { candidate, job })).trim();
     answers.push(
-      answer
+      answer && validateGeneratedContent(answer, candidate)
         ? { question, status: "generated", answer, source: "preparation provider" }
         : {
             question,
             status: "requires_review",
-            source: "provider returned no answer",
+            source: answer
+              ? "provider answer could not be grounded in candidate facts"
+              : "provider returned no answer",
           },
     );
   }

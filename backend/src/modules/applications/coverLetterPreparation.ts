@@ -1,6 +1,6 @@
 import type { CandidateProfile, Job } from "@personal-job-automation/shared/types";
 import type { PreparationLlmProvider } from "./llmProvider.js";
-import { candidateFacts, containsCandidateFact } from "./resumeTailoring.js";
+import { validateGeneratedContent } from "./resumeTailoring.js";
 import type { CoverLetterPreparation } from "./types.js";
 
 const coverLetterRequested = (job: Job): boolean =>
@@ -14,7 +14,7 @@ export const prepareCoverLetter = async (
   provider: PreparationLlmProvider = {},
 ): Promise<CoverLetterPreparation> => {
   const requested = coverLetterRequested(job);
-  if (!requested && !provider.generateCoverLetter) {
+  if (!requested) {
     return {
       status: "not_required",
       reason: "The job does not explicitly request a cover letter.",
@@ -28,13 +28,7 @@ export const prepareCoverLetter = async (
     };
   }
   const content = (await provider.generateCoverLetter({ candidate, job })).trim();
-  if (
-    !content ||
-    !containsCandidateFact(content, {
-      ...candidate,
-      skills: [...candidate.skills, ...candidateFacts(candidate)],
-    })
-  ) {
+  if (!content || !validateGeneratedContent(content, candidate)) {
     return {
       status: "needs_information",
       reason: "Generated cover letter did not contain a verifiable candidate fact.",

@@ -76,11 +76,19 @@ describe("application preparation services", () => {
   });
 
   it("does not generate an unnecessary cover letter", async () => {
+    let called = false;
     const result = await prepareCoverLetter(
       candidate(),
       job({ description: "Use Node.js and PostgreSQL." }),
+      {
+        generateCoverLetter: async () => {
+          called = true;
+          return "I built a Payments API with Node.js.";
+        },
+      },
     );
     assert.equal(result.status, "not_required");
+    assert.equal(called, false);
   });
 
   it("accepts only grounded provider cover-letter output", async () => {
@@ -132,7 +140,7 @@ describe("application preparation services", () => {
       generateAnswer: async (question) =>
         question === "Why are you interested in this role?"
           ? "I am interested in building APIs with Node.js."
-          : "I have relevant backend experience.",
+          : "I build services with TypeScript.",
     };
     const answers = await prepareApplicationAnswers(candidate(), job(), provider);
     assert.equal(
@@ -140,5 +148,50 @@ describe("application preparation services", () => {
         ?.status,
       "generated",
     );
+  });
+
+  it("requires review for an ungrounded generated answer", async () => {
+    const provider: PreparationLlmProvider = {
+      generateAnswer: async () => "I managed a team of 20 engineers at Google.",
+    };
+    const answers = await prepareApplicationAnswers(candidate(), job(), provider);
+    const answer = answers.find(
+      (item) => item.question === "Why are you interested in this role?",
+    );
+    assert.equal(answer?.status, "requires_review");
+    assert.equal(answer?.answer, undefined);
+  });
+
+  it("never calls the provider for sensitive missing information", async () => {
+    const questions: string[] = [];
+    const provider: PreparationLlmProvider = {
+      generateAnswer: async (question) => {
+        questions.push(question);
+        return "Node.js";
+      },
+    };
+    const answers = await prepareApplicationAnswers(candidate(), job(), provider);
+    for (const question of [
+      "Expected salary",
+      "Work authorization",
+      "Notice period",
+      "Relocation",
+    ]) {
+      assert.equal(
+        answers.find((answer) => answer.question === question)?.status,
+        "missing",
+      );
+      assert.equal(questions.includes(question), false);
+    }
+  });
+
+  it("rejects an ungrounded resume summary and keeps the factual fallback", async () => {
+    const provider: PreparationLlmProvider = {
+      tailorResume: async () => ({
+        summary: "Senior engineer with 8 years of experience leading large-scale systems.",
+      }),
+    };
+    const resume = await tailorResume(candidate(), job(), provider);
+    assert.equal(resume.summary, candidate().personal.professionalSummary);
   });
 });
