@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { prepareApplicationAnswers } from "../applicationAnswers.js";
-import { prepareApplication } from "../applicationPreparation.js";
+import {
+  applyExplicitAnswers,
+  prepareApplication,
+  preserveUserAnswers,
+  recomputePreparationState,
+} from "../applicationPreparation.js";
 import { prepareCoverLetter } from "../coverLetterPreparation.js";
 import { tailorResume } from "../resumeTailoring.js";
 import type { PreparationLlmProvider } from "../llmProvider.js";
+import type { PreparationResult } from "../types.js";
 import type { CandidateProfile, Job } from "@personal-job-automation/shared/types";
 
 const candidate = (overrides: Partial<CandidateProfile> = {}): CandidateProfile => ({
@@ -54,6 +60,18 @@ const job = (overrides: Partial<Job> = {}): Job => ({
   },
   ...overrides,
 });
+
+const supply = (preparation: PreparationResult, questions: string[]): PreparationResult => {
+  const applied = applyExplicitAnswers(
+    preparation.generatedAnswers,
+    questions.map((question) => ({ question, answer: `Provided ${question}` })),
+  );
+  if (!applied.ok) throw new Error(applied.message);
+  return {
+    ...preparation,
+    ...recomputePreparationState(preparation.coverLetter, applied.answers),
+  };
+};
 
 describe("application preparation services", () => {
   it("prioritizes matching existing skills without adding JD-only skills", async () => {
@@ -272,6 +290,98 @@ describe("application preparation services", () => {
     };
     const resume = await tailorResume(candidate(), job(), provider);
     assert.equal(resume.summary, candidate().personal.professionalSummary);
+  });
+
+  it("becomes ready for review only after every blocking answer is supplied", async () => {
+    const initial = await prepareApplication(
+      candidate(),
+      job({ description: "Use Node.js and PostgreSQL." }),
+    );
+    assert.equal(initial.status, "needs_information");
+    const supplied = supply(initial, initial.generatedAnswers
+      .filter((answer) => answer.status === "missing" || answer.status === "requires_review")
+      .map((answer) => answer.question));
+    assert.equal(supplied.status, "ready_for_review");
+    assert.deepEqual(supplied.missingInformation, []);
+    for (const question of [
+      "Notice period",
+      "Expected salary",
+      "Work authorization",
+      "Relocation",
+      "Why are you interested in this role?",
+      "What makes you a good fit?",
+    ]) {
+      const answer = supplied.generatedAnswers.find((item) => item.question === question);
+      assert.equal(answer?.status, "known", question);
+      assert.equal(answer?.source, "user", question);
+    }
+  });
+
+  it("stays needs_information when any answer remains unresolved", async () => {
+    const initial = await prepareApplication(
+      candidate(),
+      job({ description: "Use Node.js and PostgreSQL." }),
+    );
+    const partial = supply(
+      initial,
+      ["Notice period", "Why are you interested in this role?", "What makes you a good fit?"],
+    );
+    assert.equal(partial.status, "needs_information");
+    assert.ok(partial.missingInformation.includes("Expected salary"));
+    assert.equal(
+      partial.generatedAnswers.find((answer) => answer.question === "Why are you interested in this role?")?.source,
+      "user",
+    );
+  });
+
+  it("keeps a required cover letter blocking until that requirement is already resolved", async () => {
+    const blocked = await prepareApplication(candidate(), job());
+    const supplied = supply(blocked, blocked.generatedAnswers
+      .filter((answer) => answer.status === "missing" || answer.status === "requires_review")
+      .map((answer) => answer.question));
+    assert.equal(supplied.coverLetter.status, "needs_information");
+    assert.equal(supplied.status, "needs_information");
+    assert.ok(supplied.missingInformation.includes("cover letter generation provider"));
+
+    const provider: PreparationLlmProvider = {
+      generateCoverLetter: async () => "I built a Payments API with Node.js.",
+      generateAnswer: async () => "I have experience with Node.js.",
+    };
+    const readyLetter = await prepareApplication(candidate(), job(), provider);
+    assert.equal(readyLetter.coverLetter.status, "ready_for_review");
+    const resolved = supply(readyLetter, readyLetter.generatedAnswers
+      .filter((answer) => answer.status === "missing" || answer.status === "requires_review")
+      .map((answer) => answer.question));
+    assert.equal(resolved.status, "ready_for_review");
+  });
+
+  it("preserves user answers across regeneration and still withholds sensitive questions from the provider", async () => {
+    const questions: string[] = [];
+    const provider: PreparationLlmProvider = {
+      generateAnswer: async (question) => {
+        questions.push(question);
+        return "I have experience with Node.js.";
+      },
+    };
+    const openJob = job({ description: "Use Node.js and PostgreSQL." });
+    const first = await prepareApplication(candidate(), openJob, provider);
+    const resolved = supply(first, ["Expected salary", "Notice period", "Work authorization", "Relocation"]);
+    questions.length = 0;
+    const regenerated = await prepareApplication(candidate(), openJob, provider);
+    const preserved = recomputePreparationState(
+      regenerated.coverLetter,
+      preserveUserAnswers(regenerated.generatedAnswers, resolved.generatedAnswers),
+    );
+    for (const question of ["Expected salary", "Notice period", "Work authorization", "Relocation"]) {
+      const answer = preserved.generatedAnswers.find((item) => item.question === question);
+      assert.equal(answer?.status, "known", question);
+      assert.equal(answer?.source, "user", question);
+      assert.equal(questions.includes(question), false, question);
+    }
+    assert.equal(
+      preserved.generatedAnswers.find((answer) => answer.question === "Why are you interested in this role?")?.status,
+      "generated",
+    );
   });
 
   it("rejects mixed truthful and fabricated resume summaries", async () => {

@@ -3,7 +3,13 @@ import { isValidObjectId } from "mongoose";
 import { ApplicationPreparationModel } from "../models/ApplicationPreparation.js";
 import { CandidateProfileModel } from "../models/CandidateProfile.js";
 import { JobModel } from "../models/Job.js";
-import { prepareApplication } from "../modules/applications/applicationPreparation.js";
+import {
+  applyExplicitAnswers,
+  prepareApplication,
+  preserveUserAnswers,
+  recomputePreparationState,
+} from "../modules/applications/applicationPreparation.js";
+import type { CoverLetterPreparation, PreparedAnswer } from "../modules/applications/types.js";
 import type { CandidateProfile } from "@personal-job-automation/shared/types";
 
 const notFound = (response: Parameters<RequestHandler>[1], message: string) => {
@@ -106,15 +112,25 @@ export const prepare: RequestHandler = async (request, response, next) => {
       notFound(response, "Active candidate profile not found");
       return;
     }
+    const existing = await ApplicationPreparationModel.findOne({
+      jobId: job._id,
+      candidateProfileId: candidate._id,
+    }).lean();
     const result = await prepareApplication(
       profileForPreparation(candidate),
       { ...job, id: String(job._id) } as never,
     );
+    const generatedAnswers = preserveUserAnswers(
+      result.generatedAnswers,
+      existing?.generatedAnswers,
+    );
+    const resolved = recomputePreparationState(result.coverLetter, generatedAnswers);
     const preparation = await ApplicationPreparationModel.findOneAndUpdate(
       { jobId: job._id, candidateProfileId: candidate._id },
       {
         $set: {
           ...result,
+          ...resolved,
           preparedAt: new Date(),
         },
         $setOnInsert: {
@@ -157,6 +173,76 @@ export const getPreparation: RequestHandler = async (
       return;
     }
     response.json({ success: true, data: { preparation: serialize(preparation) } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const storedCoverLetter = (value: unknown): CoverLetterPreparation =>
+  value && typeof value === "object" && "status" in value
+    ? (value as CoverLetterPreparation)
+    : {
+        status: "not_required",
+        reason: "The job does not explicitly request a cover letter.",
+      };
+
+const storedAnswers = (value: unknown): PreparedAnswer[] =>
+  Array.isArray(value) ? (value as PreparedAnswer[]) : [];
+
+export const updatePreparation: RequestHandler = async (
+  request,
+  response,
+  next,
+) => {
+  try {
+    const { jobId } = request.params;
+    if (!isValidObjectId(jobId)) {
+      notFound(response, "Preparation not found");
+      return;
+    }
+    const candidate = await CandidateProfileModel.findOne({ isActive: true })
+      .sort({ updatedAt: -1 })
+      .lean();
+    if (!candidate) {
+      notFound(response, "Active candidate profile not found");
+      return;
+    }
+    const preparation = await ApplicationPreparationModel.findOne({
+      jobId,
+      candidateProfileId: candidate._id,
+    }).lean();
+    if (!preparation) {
+      notFound(response, "Preparation not found");
+      return;
+    }
+    const applied = applyExplicitAnswers(
+      storedAnswers(preparation.generatedAnswers),
+      request.body?.answers,
+    );
+    if (!applied.ok) {
+      response.status(400).json({ success: false, message: applied.message });
+      return;
+    }
+    const resolved = recomputePreparationState(
+      storedCoverLetter(preparation.coverLetter),
+      applied.answers,
+    );
+    const updated = await ApplicationPreparationModel.findOneAndUpdate(
+      { _id: preparation._id, jobId, candidateProfileId: candidate._id },
+      {
+        $set: {
+          generatedAnswers: resolved.generatedAnswers,
+          missingInformation: resolved.missingInformation,
+          status: resolved.status,
+        },
+      },
+      { new: true },
+    ).lean();
+    if (!updated) {
+      notFound(response, "Preparation not found");
+      return;
+    }
+    response.json({ success: true, data: { preparation: serialize(updated) } });
   } catch (error) {
     next(error);
   }

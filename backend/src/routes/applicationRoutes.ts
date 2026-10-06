@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getPreparation,
   prepare,
+  updatePreparation,
 } from "../controllers/applicationPreparationController.js";
 import {
   browserRun,
@@ -14,6 +15,7 @@ export const applicationRoutes = Router();
 applicationRoutes.use(requireAuth);
 applicationRoutes.post("/:jobId/prepare", prepare);
 applicationRoutes.get("/:jobId/preparation", getPreparation);
+applicationRoutes.patch("/:jobId/preparation", updatePreparation);
 applicationRoutes.post("/:jobId/browser-run", browserRun);
 applicationRoutes.get("/:jobId/browser-run", getBrowserRun);
 applicationRoutes.post("/:jobId/browser-run/stop", stopBrowserRun);
