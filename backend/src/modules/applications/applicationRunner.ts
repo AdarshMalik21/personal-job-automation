@@ -162,6 +162,9 @@ export const runApplication = async (
     hooks.onBrowserCreated?.(browser, context);
     const page = await context.newPage();
     await page.goto(input.job.officialApplicationUrl, { waitUntil: "domcontentloaded", timeout: 15_000 });
+    await page
+      .waitForSelector("input, textarea, select", { state: "attached", timeout: 10_000 })
+      .catch(() => undefined);
     return await fillObservedPage(page, input);
   } catch (error) {
     if (hooks.isStopped?.()) {
