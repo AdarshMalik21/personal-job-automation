@@ -16,6 +16,15 @@ const developmentDefaults = {
   frontendUrl: "http://localhost:3000",
 };
 
+export const mongoDatabaseName = (uri: string): string | undefined => {
+  try {
+    const name = new URL(uri).pathname.split("/").filter(Boolean)[0];
+    return name || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export const readEnv = (source: Record<string, string | undefined>): AppEnv => {
   const nodeEnv = source.NODE_ENV?.trim() || "development";
   const production = nodeEnv === "production";
@@ -41,12 +50,16 @@ export const readEnv = (source: Record<string, string | undefined>): AppEnv => {
   if (production && frontendUrl === "*") {
     throw new Error("FRONTEND_URL cannot be a wildcard in production");
   }
+  const mongodbUri = requiredInProduction("MONGODB_URI", developmentDefaults.mongodbUri);
+  if (production && !mongoDatabaseName(mongodbUri)) {
+    throw new Error("MONGODB_URI must include a database name");
+  }
 
   return {
     nodeEnv,
     production,
     port,
-    mongodbUri: requiredInProduction("MONGODB_URI", developmentDefaults.mongodbUri),
+    mongodbUri,
     redisUrl: requiredInProduction("REDIS_URL", developmentDefaults.redisUrl),
     jwtSecret: required("JWT_SECRET"),
     adminEmail: required("ADMIN_EMAIL"),

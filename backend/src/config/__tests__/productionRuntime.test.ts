@@ -42,6 +42,10 @@ describe("production configuration", () => {
     }
     assert.throws(() => readEnv({ ...productionEnv, FRONTEND_URL: "*" }), /wildcard/);
     assert.throws(() => readEnv({ ...productionEnv, PORT: "0" }), /PORT/);
+    assert.throws(
+      () => readEnv({ ...productionEnv, MONGODB_URI: "mongodb+srv://user:secret@cluster.example.net/?retryWrites=true" }),
+      /database name/,
+    );
   });
 
   it("removes database and redis connection strings from log text", () => {

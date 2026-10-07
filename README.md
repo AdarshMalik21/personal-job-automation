@@ -118,7 +118,7 @@ Set `NEXT_PUBLIC_API_URL` in the environment before `npm run build --workspace f
 
 ### MongoDB Atlas
 
-Create a database user and set `MONGODB_URI` to that user's connection string. Allow the EC2 instance's outbound IP in Atlas Network Access. The API logs connection success or failure and does not log the connection string.
+Create a database user and set `MONGODB_URI` to that user's connection string. The path must include the database name, for example `mongodb+srv://<user>:<password>@<cluster>/test?retryWrites=true&w=majority`. The jobs already stored for this project are in the Atlas database named `test`. Use that name so production reads the same data. Production startup rejects a URI that omits the database name instead of silently selecting a default. Allow the EC2 instance's outbound IP in Atlas Network Access. The API logs connection success or failure and does not log the connection string.
 
 ### Redis
 
