@@ -1,4 +1,5 @@
 export const JOB_DISCOVERY = "JOB_DISCOVERY";
+export const DAILY_REPORT = "DAILY_REPORT";
 export const MAX_QUEUE_ATTEMPTS = 3;
 
 export type QueueJobStatus = "queued" | "processing" | "retry" | "completed" | "failed";

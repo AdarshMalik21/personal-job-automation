@@ -121,6 +121,40 @@ export const login = (email: string, password: string) =>
     body: JSON.stringify({ email, password }),
   });
 
+export type DailySelectionJob = {
+  rank: number;
+  jobId: string;
+  title: string;
+  company: string;
+  location?: string;
+  remoteStatus?: string;
+  matchScore: number;
+  decision: "APPLY" | "REVIEW";
+  reasons: string[];
+  missingRequirements: string[];
+  freshness: "fresh" | "stale" | "unknown";
+  officialApplicationUrl?: string;
+  applicationStatus: string;
+  preparationAvailable: boolean;
+  rankingReason: string;
+};
+
+export type DailySelection = {
+  dateKey: string;
+  timezone: string;
+  jobs: DailySelectionJob[];
+  notificationStatus: string;
+};
+
+export const getDailySelection = (token: string) =>
+  request<DailySelection>("/dashboard/daily-selection", withToken(token));
+
+export const prepareApplication = (token: string, jobId: string) =>
+  request<{ preparation: { id: string; status?: string } }>(`/applications/${encodeURIComponent(jobId)}/prepare`, {
+    ...withToken(token),
+    method: "POST",
+  });
+
 export const getDashboardSummary = (token: string) =>
   request<DashboardSummary>("/dashboard/summary", {
     headers: { Authorization: `Bearer ${token}` },

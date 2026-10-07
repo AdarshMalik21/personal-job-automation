@@ -9,10 +9,13 @@ import {
   JobListParams,
   JobStats,
   evaluateFollowUps,
+  DailySelection,
   getApplicationAnalytics,
+  getDailySelection,
   getJobStats,
   getJobs,
   markJobReviewed,
+  prepareApplication,
   skipJob,
 } from "../../lib/api";
 
@@ -27,6 +30,8 @@ export default function DashboardPage() {
   const [jobs, setJobs] = useState<DashboardJob[]>([]);
   const [stats, setStats] = useState<JobStats>();
   const [analytics, setAnalytics] = useState<ApplicationAnalytics>();
+  const [daily, setDaily] = useState<DailySelection>();
+  const [dailyMessage, setDailyMessage] = useState("");
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [filters, setFilters] = useState<JobListParams>(initialFilters);
   const [loading, setLoading] = useState(true);
@@ -62,13 +67,14 @@ export default function DashboardPage() {
       if (value !== undefined && value !== "" && key !== "page" && key !== "limit") params.set(key, String(value));
     });
     window.history.replaceState(null, "", `${window.location.pathname}${params.toString() ? `?${params}` : ""}`);
-    Promise.all([getJobs(token, query), getJobStats(token), getApplicationAnalytics(token)])
-      .then(([jobsResult, statsResult, analyticsResult]) => {
-        if (!jobsResult.data || !statsResult.data || !analyticsResult.data) throw new Error("Dashboard response was incomplete");
+    Promise.all([getJobs(token, query), getJobStats(token), getApplicationAnalytics(token), getDailySelection(token)])
+      .then(([jobsResult, statsResult, analyticsResult, dailyResult]) => {
+        if (!jobsResult.data || !statsResult.data || !analyticsResult.data || !dailyResult.data) throw new Error("Dashboard response was incomplete");
         setJobs(jobsResult.data.jobs);
         setPagination(jobsResult.data.pagination);
         setStats(statsResult.data);
         setAnalytics(analyticsResult.data.analytics);
+        setDaily(dailyResult.data);
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof Error && requestError.message.includes("session")) {
@@ -83,6 +89,17 @@ export default function DashboardPage() {
 
   const updateFilter = (key: keyof JobListParams, value: string) => {
     setFilters((current) => ({ ...current, [key]: value, page: 1 }));
+  };
+
+  const prepare = async (jobId: string) => {
+    if (!token) return;
+    setDailyMessage("");
+    try {
+      await prepareApplication(token, jobId);
+      router.push(`/jobs/${jobId}/review`);
+    } catch (requestError: unknown) {
+      setDailyMessage(requestError instanceof Error ? requestError.message : "Preparation failed");
+    }
   };
 
   const review = async (job: DashboardJob, action: "review" | "skip") => {
@@ -157,6 +174,39 @@ export default function DashboardPage() {
           <div className="rate-chip"><span>Rejection rate</span><strong>{percent(analytics?.rejectionRate)}</strong></div>
           <p className="rate-note">Rates use successfully submitted applications as the denominator.</p>
         </div>
+      </section>
+      <section className="jobs-panel" aria-label="Today's best matches">
+        <div className="section-heading">
+          <h2>Today&apos;s Best Matches</h2>
+          <p>{daily ? `${daily.dateKey} · ${daily.jobs.length} selected` : "Loading today's selection"}</p>
+        </div>
+        {dailyMessage && <p className="form-error">{dailyMessage}</p>}
+        {!daily || daily.jobs.length === 0 ? (
+          <div className="empty-state">
+            <strong>No daily matches yet.</strong>
+            <span>The weekday 08:00 run ranks discovered jobs and keeps the best 10.</span>
+          </div>
+        ) : (
+          <div className="daily-list">
+            {daily.jobs.map((job) => (
+              <article className="daily-row" key={job.jobId}>
+                <strong className="daily-rank">{job.rank}</strong>
+                <div>
+                  <h3><Link href={`/jobs/${job.jobId}`}>{job.title}</Link></h3>
+                  <p>{job.company} · {job.location ?? "Location unknown"} · {job.remoteStatus ?? "Work mode unknown"}</p>
+                </div>
+                <div className="job-row-score"><strong>{job.matchScore}</strong><span>/100</span></div>
+                <span className={`decision-badge ${job.decision.toLowerCase()}`}>{job.decision}</span>
+                <span>{job.applicationStatus.replaceAll("_", " ")}</span>
+                <div className="job-row-actions">
+                  <Link className="text-button" href={`/jobs/${job.jobId}`}>View Job</Link>
+                  <button className="text-button" onClick={() => prepare(job.jobId)}>Prepare Application</button>
+                  <Link className="text-button" href={`/jobs/${job.jobId}`}>Track Application</Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
       <section className="jobs-panel" aria-label="Discovered jobs">
         <div className="job-list-header">

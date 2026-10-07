@@ -1,8 +1,10 @@
 import type { RequestHandler } from "express";
 import { ApplicationModel } from "../models/Application.js";
+import { DailySelectionModel } from "../models/DailySelection.js";
 import { JobModel } from "../models/Job.js";
 import { getDatabaseStatus } from "../config/database.js";
 import { getRedisStatus } from "../config/redis.js";
+import { kolkataParts } from "../scheduler/discoverySchedule.js";
 
 export const summary: RequestHandler = async (_request, response, next) => {
   try {
@@ -36,6 +38,31 @@ export const summary: RequestHandler = async (_request, response, next) => {
         redisStatus: getRedisStatus(),
         totalJobs,
         totalApplications,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const dailySelection: RequestHandler = async (_request, response, next) => {
+  try {
+    const dateKey = kolkataParts(new Date()).dateKey;
+    if (getDatabaseStatus() !== "connected") {
+      response.json({
+        success: true,
+        data: { dateKey, timezone: "Asia/Kolkata", jobs: [], notificationStatus: "none" },
+      });
+      return;
+    }
+    const selection = await DailySelectionModel.findOne({ dateKey }).lean();
+    response.json({
+      success: true,
+      data: {
+        dateKey,
+        timezone: "Asia/Kolkata",
+        jobs: selection?.jobs ?? [],
+        notificationStatus: selection?.notificationStatus ?? "none",
       },
     });
   } catch (error) {

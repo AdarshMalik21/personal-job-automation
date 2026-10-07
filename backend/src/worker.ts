@@ -4,6 +4,8 @@ import { connectRedis, disconnectRedis, getRedisStatus, redisClient } from "./co
 import { shutdownRuntime } from "./config/shutdown.js";
 import { JobQueue } from "./queue/jobQueue.js";
 import { createRedisCommands } from "./queue/redisCommands.js";
+import { runDailyReport } from "./modules/jobs/ranking/dailyReport.js";
+import { DAILY_REPORT } from "./queue/types.js";
 import { discoveryHandlers, runWorkerLoop } from "./worker/workerRuntime.js";
 
 const start = async (): Promise<void> => {
@@ -27,7 +29,12 @@ const start = async (): Promise<void> => {
 
   await runWorkerLoop({
     queue,
-    handlers: discoveryHandlers(),
+    handlers: discoveryHandlers(undefined, {
+      reserve: (key) => commands.setNx(key, "1"),
+      release: (key) => commands.del(key),
+      enqueue: (payload) => queue.enqueue(DAILY_REPORT, payload),
+      publish: (dateKey) => runDailyReport(dateKey),
+    }),
     reserve: (key) => commands.setNx(key, "1"),
     release: (key) => commands.del(key),
     isRunning: () => running,

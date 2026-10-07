@@ -1,20 +1,58 @@
 import { errorText } from "../config/redact.js";
-import { JobQueue } from "../queue/jobQueue.js";
-import { JOB_DISCOVERY, type QueueJob } from "../queue/types.js";
-import { tickDiscoverySchedule } from "../scheduler/discoverySchedule.js";
+import { dailyReportKey } from "../modules/jobs/ranking/dailyReport.js";
 import { runJobDiscovery } from "../modules/jobs/services/jobDiscovery.js";
+import { JobQueue } from "../queue/jobQueue.js";
+import { DAILY_REPORT, JOB_DISCOVERY, type QueueJob } from "../queue/types.js";
+import { kolkataParts, tickDiscoverySchedule } from "../scheduler/discoverySchedule.js";
 
 export type WorkerHandlers = Record<string, (job: QueueJob) => Promise<void>>;
+
+export type DailyReportHooks = {
+  reserve: (key: string) => Promise<boolean>;
+  release: (key: string) => Promise<void>;
+  enqueue: (payload: { scheduledFor: string }) => Promise<{ id: string }>;
+  publish?: (dateKey: string) => Promise<unknown>;
+};
 
 export const runScheduledJobDiscovery = (
   discover: (dependencies: { validateApplicationUrls: boolean }) => Promise<unknown> = runJobDiscovery,
 ) => discover({ validateApplicationUrls: true });
 
+export const scheduleDailyReport = async (
+  dateKey: string,
+  report: Pick<DailyReportHooks, "reserve" | "release" | "enqueue">,
+): Promise<"scheduled" | "duplicate" | "enqueue_failed"> => {
+  const key = dailyReportKey(dateKey);
+  const reserved = await report.reserve(key);
+  if (!reserved) {
+    console.info(`Duplicate daily report skipped key=${key}`);
+    return "duplicate";
+  }
+  try {
+    const job = await report.enqueue({ scheduledFor: dateKey });
+    console.info(`Daily report scheduled key=${key} id=${job.id}`);
+    return "scheduled";
+  } catch (error) {
+    await report.release(key);
+    console.error(`Daily report enqueue failed key=${key} error=${errorText(error)}`);
+    return "enqueue_failed";
+  }
+};
+
 export const discoveryHandlers = (
   discover: () => Promise<unknown> = runScheduledJobDiscovery,
+  report?: DailyReportHooks,
 ): WorkerHandlers => ({
-  [JOB_DISCOVERY]: async () => {
+  [JOB_DISCOVERY]: async (job) => {
     await discover();
+    if (!report) return;
+    const dateKey = job.payload.scheduledFor || kolkataParts(new Date()).dateKey;
+    await scheduleDailyReport(dateKey, report);
+  },
+  [DAILY_REPORT]: async (job) => {
+    if (!report?.publish) return;
+    const dateKey = job.payload.scheduledFor || kolkataParts(new Date()).dateKey;
+    await report.publish(dateKey);
   },
 });
 

@@ -7,8 +7,8 @@ import type { JobRepository } from "../../modules/jobs/services/jobPersistence.j
 import type { RawJobInput } from "../../modules/jobs/types/rawJob.js";
 import { JobQueue } from "../../queue/jobQueue.js";
 import { MemoryQueueCommands } from "../../queue/memoryQueue.js";
-import { JOB_DISCOVERY } from "../../queue/types.js";
-import { discoveryHandlers, processNextJob, runScheduledJobDiscovery, runWorkerLoop } from "../workerRuntime.js";
+import { DAILY_REPORT, JOB_DISCOVERY } from "../../queue/types.js";
+import { discoveryHandlers, processNextJob, runScheduledJobDiscovery, runWorkerLoop, scheduleDailyReport } from "../workerRuntime.js";
 
 const rawJob = (): RawJobInput => ({
   source: "greenhouse",
@@ -113,6 +113,35 @@ describe("job discovery worker", () => {
     assert.equal(attempts, 2);
     const jobs = await Promise.all((await commands.list("queue:processing")).map((id) => queue.get(id)));
     assert.equal(jobs.every((job) => job?.status !== "processing"), true);
+  });
+
+  it("enqueues one daily report after discovery and retries a failed notification", async () => {
+    const commands = new MemoryQueueCommands();
+    const queue = new JobQueue(commands);
+    let published = 0;
+    const hooks = {
+      reserve: (key: string) => commands.setNx(key, "1"),
+      release: (key: string) => commands.del(key),
+      enqueue: (payload: { scheduledFor: string }) => queue.enqueue(DAILY_REPORT, payload),
+      publish: async () => {
+        published += 1;
+        if (published === 1) throw new Error("notification provider unavailable");
+      },
+    };
+    const handlers = discoveryHandlers(async () => undefined, hooks);
+    await queue.enqueue(JOB_DISCOVERY, { scheduledFor: "2026-10-07" });
+    assert.equal(await processNextJob(queue, handlers), "completed");
+    assert.equal(await scheduleDailyReport("2026-10-07", hooks), "duplicate");
+    assert.equal(await processNextJob(queue, handlers), "retry");
+    assert.equal(published, 1);
+    const released = await scheduleDailyReport("2026-10-08", {
+      reserve: async () => true,
+      release: async () => undefined,
+      enqueue: async () => {
+        throw new Error("queue unavailable");
+      },
+    });
+    assert.equal(released, "enqueue_failed");
   });
 
   it("does not call application submission", async () => {

@@ -394,6 +394,36 @@ button {
   font-weight: 650;
   letter-spacing: -0.02em;
 }
+.daily-list {
+  display: grid;
+  gap: 0.45rem;
+}
+.daily-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1.6fr) 4.5rem 5.5rem minmax(7rem, 0.6fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #d7e0da;
+  border-radius: 8px;
+  background: #fff;
+}
+.daily-row h3,
+.daily-row p {
+  margin: 0;
+}
+.daily-row h3 {
+  font-size: 0.95rem;
+}
+.daily-row p,
+.daily-rank {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.daily-rank {
+  font-weight: 650;
+  text-align: center;
+}
 .section-heading p,
 .jobs-context {
   margin: 0;
@@ -894,6 +924,13 @@ button {
     grid-column: 1 / -1;
   }
   .job-row-actions {
+    justify-content: flex-start;
+  }
+  .daily-row {
+    grid-template-columns: 2rem 1fr auto;
+  }
+  .daily-row .job-row-actions {
+    grid-column: 1 / -1;
     justify-content: flex-start;
   }
 }
