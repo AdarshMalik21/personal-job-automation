@@ -2,6 +2,8 @@ import type { CandidateProfile, Job } from "@personal-job-automation/shared/type
 import { CandidateProfileModel } from "../../../models/CandidateProfile.js";
 import type { JobSourceAdapter } from "../adapters/JobSourceAdapter.js";
 import { matchCandidateToJob } from "../matching/candidateMatcher.js";
+import { createJobSourceAdapters } from "../sources/jobSourceConfig.js";
+import type { UrlFetcher } from "./applicationStatus.js";
 import { JobSourceOrchestrator } from "./jobIngestionOrchestrator.js";
 import { persistJobs, type JobRepository } from "./jobPersistence.js";
 
@@ -11,6 +13,7 @@ export type DiscoveryDependencies = {
   candidate?: CandidateProfile | null;
   loadCandidate?: () => Promise<CandidateProfile | null>;
   validateApplicationUrls?: boolean;
+  urlFetcher?: UrlFetcher;
 };
 
 export const loadActiveCandidate = async (): Promise<CandidateProfile | null> => {
@@ -57,12 +60,27 @@ export const loadActiveCandidate = async (): Promise<CandidateProfile | null> =>
   };
 };
 
+const countUrlStatus = (jobs: Array<{ urlValidation: { status: string } }>, status: string) =>
+  jobs.filter((job) => job.urlValidation.status === status).length;
+
 export const runJobDiscovery = async (dependencies: DiscoveryDependencies = {}) => {
-  const adapters = dependencies.adapters ?? [];
+  const adapters = dependencies.adapters ?? createJobSourceAdapters();
+  console.info(`Job discovery started sources=${adapters.length}`);
   const result = await new JobSourceOrchestrator(adapters).ingest({
     validateApplicationUrls: dependencies.validateApplicationUrls ?? false,
+    ...(dependencies.urlFetcher ? { urlFetcher: dependencies.urlFetcher } : {}),
   });
-  if (adapters.length > 0 && result.sources.length > 0 && result.sources.every((source) => source.status === "failed")) {
+  const succeeded = result.sources.filter((source) => source.status === "success").length;
+  const failed = result.sources.length - succeeded;
+  for (const source of result.sources) {
+    console.info(
+      `Job discovery source type=${source.source} status=${source.status} fetched=${source.fetched}${source.error ? ` error=${source.error}` : ""}`,
+    );
+  }
+  console.info(
+    `Job discovery results attempted=${result.sources.length} succeeded=${succeeded} failed=${failed} raw=${result.stats.totalFetched} invalid=${result.stats.totalInvalid} duplicates=${result.stats.totalDuplicates} fresh=${result.stats.totalFresh} stale=${result.stats.totalStale} unknownFreshness=${result.stats.totalUnknownFreshness} urlReachable=${countUrlStatus(result.jobs, "reachable")} urlUnreachable=${countUrlStatus(result.jobs, "unreachable")} urlInvalid=${countUrlStatus(result.jobs, "invalid")} urlUnknown=${countUrlStatus(result.jobs, "unknown")}`,
+  );
+  if (adapters.length > 0 && result.sources.length > 0 && failed === result.sources.length) {
     throw new Error("Job discovery failed for every configured source");
   }
   const candidate = dependencies.candidate !== undefined
@@ -93,6 +111,15 @@ export const runJobDiscovery = async (dependencies: DiscoveryDependencies = {}) 
     };
   });
   await persistJobs(jobs, dependencies.repository);
+  const decisions = { APPLY: 0, REVIEW: 0, SKIP: 0, unmatched: 0 };
+  for (const job of jobs) {
+    const decision = job.match?.decision;
+    if (decision === "APPLY" || decision === "REVIEW" || decision === "SKIP") decisions[decision] += 1;
+    else decisions.unmatched += 1;
+  }
+  console.info(
+    `Job discovery persisted=${jobs.length} apply=${decisions.APPLY} review=${decisions.REVIEW} skip=${decisions.SKIP} unmatched=${decisions.unmatched}`,
+  );
   return {
     persisted: jobs.length,
     sources: result.sources,

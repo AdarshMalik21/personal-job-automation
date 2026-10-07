@@ -182,6 +182,12 @@ The idempotency key is `job-discovery:YYYY-MM-DD:Asia/Kolkata`. Redis stores tha
 
 Pending, processing, retry, and failed job state stays in Redis. A job is claimed by moving it from the pending list to the processing list. It is retried up to 3 attempts with a short backoff, then marked failed. The worker does not submit applications. Discovery calls the existing ingestion orchestrator, deterministic matcher, and job upsert path. Approve & Submit remains a separate, explicit user action.
 
+### Configured sources
+
+The scheduled discovery job calls `runJobDiscovery({ validateApplicationUrls: true })`. When no adapters are injected, discovery loads `backend/src/modules/jobs/sources/jobSourceConfig.ts`. Enabled entries become the existing Greenhouse, Lever, Ashby, or company career-page adapters. Disabled entries are skipped. One failed source does not cancel the others.
+
+The initial list is Groww and Razorpay on Greenhouse, CRED on Lever, and Linear on Ashby. These are public board identifiers, not secrets. Add another company by appending a config entry. A company career page also needs that company's JSON endpoint and parser. The worker file does not list companies. Discovery upserts job documents and does not create or reset Application records.
+
 ## Phase boundary
 
 Phase 1 intentionally does not include scraping, job matching, LLM processing, resume tailoring, browser automation, credential storage for job sites, application submission, queues, or caching behavior. Phase 2A adds only the offline canonical job foundation: raw input validation, deterministic normalization, and identity preparation. Source integrations, deduplication decisions, freshness, filtering, analysis, matching, ranking, and automation remain deferred.

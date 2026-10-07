@@ -1,0 +1,152 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { describe, it } from "node:test";
+import type { CandidateProfile, Job } from "@personal-job-automation/shared/types";
+import type { FetchLike } from "../adapters/JobSourceAdapter.js";
+import { runJobDiscovery } from "../services/jobDiscovery.js";
+import type { JobRepository } from "../services/jobPersistence.js";
+import { createJobSourceAdapters, type JobSourceConfig } from "../sources/jobSourceConfig.js";
+
+const response = (body: unknown, ok = true, status = 200): Response =>
+  ({ ok, status, json: async () => body }) as Response;
+
+const candidate: CandidateProfile = {
+  isActive: true,
+  personal: { firstName: "Asha" },
+  contact: { email: "asha@example.com" },
+  yearsOfExperience: 2,
+  experience: [],
+  education: [],
+  skills: ["javascript", "react", "node.js", "mongodb"],
+  technologies: ["express.js"],
+  projects: [],
+  certifications: [],
+  preferredRoles: ["Full Stack Developer"],
+  preferredLocations: ["Gurugram", "Delhi", "Noida"],
+  remotePreference: "any",
+  verifiedInformation: {},
+  relatedTechnology: [],
+  unknownInformation: [],
+};
+
+const greenhouseJob = {
+  id: 11,
+  title: "Full Stack Developer",
+  location: { name: "Gurugram" },
+  absolute_url: "https://boards.greenhouse.io/acme/jobs/11",
+  first_published: "2026-10-01T00:00:00.000Z",
+  content: "Build React and Node services.",
+};
+
+describe("configured job discovery", () => {
+  it("runs every configured source through ingestion, matching, and persistence", async () => {
+    const fetcher: FetchLike = async (url) => {
+      if (url.includes("greenhouse.io")) return response({ jobs: [greenhouseJob] });
+      if (url.includes("lever.co")) throw new Error("request timed out after 10000ms");
+      if (url.includes("ashbyhq.com")) return response({ jobs: [] });
+      if (url.includes("broken.test")) return response({ unexpected: true });
+      return response({ positions: [] });
+    };
+    const sources: JobSourceConfig[] = [
+      { id: "greenhouse", enabled: true, type: "greenhouse", boardToken: "acme", companyName: "Acme" },
+      { id: "lever", enabled: true, type: "lever", site: "acme", companyName: "Acme" },
+      { id: "ashby", enabled: true, type: "ashby", boardName: "acme", companyName: "Acme" },
+      { id: "skipped", enabled: false, type: "greenhouse", boardToken: "ignored", companyName: "Ignored" },
+      {
+        id: "company",
+        enabled: true,
+        type: "company",
+        companyName: "Acme",
+        endpoint: "https://acme.test/careers.json",
+        parser: (_value, config) => [
+          {
+            source: "company",
+            externalJobId: "company-11",
+            title: "Full Stack Developer",
+            company: config.companyName,
+            location: "Gurugram",
+            officialApplicationUrl: "https://boards.greenhouse.io/acme/jobs/11",
+            postedDate: "2026-10-01T00:00:00.000Z",
+          },
+          { source: "company", externalJobId: "bad", title: " ", company: config.companyName },
+        ],
+      },
+      {
+        id: "malformed",
+        enabled: true,
+        type: "company",
+        companyName: "Broken",
+        endpoint: "https://broken.test/careers.json",
+        parser: () => {
+          throw new Error("company response is malformed");
+        },
+      },
+    ];
+    const saved: Job[] = [];
+    const repository: JobRepository = { upsert: async (job) => { saved.push(job); } };
+    let urlChecks = 0;
+    const lines: string[] = [];
+    const original = console.info;
+    console.info = (...args: unknown[]) => {
+      lines.push(args.map((value) => String(value)).join(" "));
+    };
+    try {
+      const result = await runJobDiscovery({
+        adapters: createJobSourceAdapters(sources, { fetcher }),
+        repository,
+        candidate,
+        validateApplicationUrls: true,
+        urlFetcher: async () => {
+          urlChecks += 1;
+          return { status: 200 } as Response;
+        },
+      });
+      assert.equal(result.persisted, 1);
+      assert.equal(result.stats.totalInvalid, 1);
+      assert.equal(result.stats.totalDuplicates, 1);
+      assert.equal(result.stats.totalFresh, 1);
+      assert.equal(result.sources.filter((source) => source.status === "success").length, 3);
+      assert.equal(result.sources.filter((source) => source.status === "failed").length, 2);
+      assert.equal(result.sources.find((source) => source.source === "ashby")?.fetched, 0);
+      assert.equal(result.sources.find((source) => source.source === "ashby")?.status, "success");
+      assert.equal(saved.length, 1);
+      assert.equal(saved[0]?.title, "Full Stack Developer");
+      assert.equal(saved[0]?.normalizedCompany, "acme");
+      assert.ok(saved[0]?.canonicalIdentity.crossSourceKey);
+      assert.equal(typeof saved[0]?.match?.decision, "string");
+      assert.equal(urlChecks, 1);
+      assert.equal(lines.some((line) => line.includes("Job discovery started sources=5")), true);
+      assert.equal(lines.some((line) => line.includes("attempted=5") && line.includes("succeeded=3") && line.includes("failed=2")), true);
+      assert.equal(lines.some((line) => line.includes("persisted=1")), true);
+    } finally {
+      console.info = original;
+    }
+  });
+
+  it("leaves application URL checks off unless discovery asks for them", async () => {
+    let urlChecks = 0;
+    const repository: JobRepository = { upsert: async () => undefined };
+    await runJobDiscovery({
+      adapters: createJobSourceAdapters([
+        { id: "greenhouse", enabled: true, type: "greenhouse", boardToken: "acme", companyName: "Acme" },
+      ], {
+        fetcher: async () => response({ jobs: [greenhouseJob] }),
+      }),
+      repository,
+      candidate: null,
+      validateApplicationUrls: false,
+      urlFetcher: async () => {
+        urlChecks += 1;
+        return { status: 200 } as Response;
+      },
+    });
+    assert.equal(urlChecks, 0);
+  });
+
+  it("does not write application or submission records", () => {
+    const source = readFileSync(new URL("../services/jobDiscovery.ts", import.meta.url), "utf8");
+    assert.equal(source.includes("ApplicationModel"), false);
+    assert.equal(source.includes("submitHeldApplication"), false);
+    assert.equal(source.includes("applicationSubmission"), false);
+  });
+});
