@@ -3,10 +3,12 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   async rewrites() {
+    const target = process.env.API_PROXY_TARGET?.trim();
+    if (!target) return [];
     return [
       {
         source: "/api/backend/:path*",
-        destination: `${process.env.API_PROXY_TARGET}/api/:path*`,
+        destination: `${target}/api/:path*`,
       },
     ];
   },
