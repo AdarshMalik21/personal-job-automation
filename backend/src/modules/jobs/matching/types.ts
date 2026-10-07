@@ -37,15 +37,26 @@ export type SkillAnalysis = {
   unknown: string[];
 };
 
+export type RoleClassification = "TARGET" | "RELATED" | "AMBIGUOUS" | "EXCLUDED";
+
+export type RoleAnalysis = {
+  status: "compatible" | "incompatible" | "unknown";
+  reason: string;
+  normalizedRole: string;
+  confidence: number;
+  classification?: RoleClassification;
+  matchedTargetRole?: string;
+  exclusionCategory?: string;
+  exclusionReason?: string;
+  evidence?: string[];
+};
+
 export type MatchResult = {
   eligible: boolean;
   matchScore: number;
   confidence: MatchConfidence;
   decision: MatchDecision;
-  roleAnalysis: {
-    status: "compatible" | "incompatible" | "unknown";
-    reason: string;
-  };
+  roleAnalysis: RoleAnalysis;
   experienceAnalysis: ExperienceAnalysis;
   locationAnalysis: LocationAnalysis;
   skillAnalysis: SkillAnalysis;

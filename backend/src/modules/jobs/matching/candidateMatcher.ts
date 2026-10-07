@@ -5,47 +5,54 @@ import type {
 import {
   MATCH_SCORE_WEIGHTS,
   CORE_STACK,
-  ROLE_SIGNALS,
   SKILL_WEIGHTS,
-  UNRELATED_ROLE_SIGNALS,
 } from "./constants.js";
 import { analyzeExperience } from "./experienceAnalyzer.js";
 import { analyzeLocation } from "./locationAnalyzer.js";
+import { assessRoleRelevance } from "./roleRelevanceGate.js";
 import { matchSkills } from "./skillMatcher.js";
 import { normalizeSkill } from "../utils/normalizeSkills.js";
-import type { MatchResult } from "./types.js";
+import type { MatchResult, RoleAnalysis, SkillAnalysis } from "./types.js";
 
-const normalize = (value: string): string =>
-  value.toLowerCase().replace(/[^a-z0-9+#. -]/g, " ");
+const emptySkills = (): SkillAnalysis => ({
+  exact: [],
+  related: [],
+  transferable: [],
+  missingRequired: [],
+  missingPreferred: [],
+  unknown: [],
+});
 
-const analyzeRole = (
-  candidate: CandidateProfile,
-  job: Job,
-): MatchResult["roleAnalysis"] => {
-  const title = normalize(job.title);
-  if (UNRELATED_ROLE_SIGNALS.some((signal) => title.includes(signal))) {
-    return {
-      status: "incompatible",
-      reason: "Job title is outside the candidate's target engineering roles",
-    };
-  }
-  const preferredRoleMatch = candidate.preferredRoles.some((role) =>
-    title.includes(normalize(role)),
-  );
-  if (
-    preferredRoleMatch ||
-    ROLE_SIGNALS.some((signal) => title.includes(signal))
-  ) {
-    return {
-      status: "compatible",
-      reason: "Job title contains a compatible role signal",
-    };
-  }
-  return {
+const roleExcludedMatch = (roleAnalysis: RoleAnalysis): MatchResult => ({
+  eligible: false,
+  matchScore: 0,
+  confidence: "low",
+  decision: "SKIP",
+  roleAnalysis,
+  experienceAnalysis: {
     status: "unknown",
-    reason: "Job title does not provide a clear target-role signal",
-  };
-};
+    reason: "Not evaluated because the role failed the relevance gate",
+  },
+  locationAnalysis: {
+    status: "unknown",
+    reason: "Not evaluated because the role failed the relevance gate",
+  },
+  skillAnalysis: emptySkills(),
+  matchedSkills: [],
+  missingSkills: [],
+  relatedSkills: [],
+  reasons: [roleAnalysis.reason],
+  hardFilterFailures: [roleAnalysis.reason],
+  scoreBreakdown: {
+    roleRelevance: 0,
+    requiredSkillCoverage: 0,
+    preferredSkillCoverage: 0,
+    experienceFit: 0,
+    locationCompatibility: 0,
+    coreStackAlignment: 0,
+    analysisConfidence: 0,
+  },
+});
 
 const skillCoverage = (
   skills: ReturnType<typeof matchSkills>,
@@ -83,7 +90,8 @@ export const matchCandidateToJob = (
   candidate: CandidateProfile,
   job: Job,
 ): MatchResult => {
-  const roleAnalysis = analyzeRole(candidate, job);
+  const roleAnalysis = assessRoleRelevance(job.title, job.description ?? "");
+  if (roleAnalysis.status === "incompatible") return roleExcludedMatch(roleAnalysis);
   const experienceAnalysis = analyzeExperience(
     job,
     candidate.yearsOfExperience,
@@ -91,8 +99,6 @@ export const matchCandidateToJob = (
   const locationAnalysis = analyzeLocation(candidate, job);
   const skills = matchSkills(candidate, job);
   const hardFilterFailures: string[] = [];
-  if (roleAnalysis.status === "incompatible")
-    hardFilterFailures.push(roleAnalysis.reason);
   if (
     experienceAnalysis.status === "mismatch" &&
     experienceAnalysis.requirement?.preference === "required"
@@ -105,12 +111,7 @@ export const matchCandidateToJob = (
       `Missing required skills: ${skills.missingRequired.join(", ")}`,
     );
 
-  const roleRelevance =
-    roleAnalysis.status === "compatible"
-      ? 20
-      : roleAnalysis.status === "unknown"
-        ? 8
-        : 0;
+  const roleRelevance = roleAnalysis.status === "compatible" ? 20 : 8;
   const requiredSkillCoverage = skillCoverage(skills, false);
   const preferredSkillCoverage = skillCoverage(skills, true);
   const experienceFit =

@@ -30,6 +30,7 @@ export type RankableJob = {
   locationStatus: DailyLocationStatus;
   applicationStatus: string;
   preparationAvailable: boolean;
+  hardFilterFailure?: boolean;
 };
 
 const decisionRank = (decision: DailyDecision): number =>
@@ -56,7 +57,9 @@ export const rankDailyJobs = (
   limit = DAILY_SELECTION_LIMIT,
 ): RankableJob[] => {
   const eligible = jobs.filter(
-    (job) => job.decision === "APPLY" || job.decision === "REVIEW",
+    (job) =>
+      (job.decision === "APPLY" || job.decision === "REVIEW") &&
+      job.hardFilterFailure !== true,
   );
   return [...eligible]
     .sort((left, right) => {

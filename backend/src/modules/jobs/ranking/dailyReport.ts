@@ -106,6 +106,7 @@ export const loadRankableJobs = async (now = new Date()): Promise<RankableJob[]>
     const locationText = text(job.location);
     const remoteStatus = text(job.remoteStatus);
     const officialApplicationUrl = text(job.officialApplicationUrl);
+    const hardFilterFailure = stringList(match.hardFilterFailures).length > 0;
     rankable.push({
       id: String(job._id),
       title: job.title,
@@ -127,6 +128,7 @@ export const loadRankableJobs = async (now = new Date()): Promise<RankableJob[]>
       locationStatus: locationOf(location.status),
       applicationStatus: applicationStatus.get(String(job._id)) ?? "not_applied",
       preparationAvailable: prepared.has(String(job._id)),
+      ...(hardFilterFailure ? { hardFilterFailure } : {}),
     });
   }
   return rankable;

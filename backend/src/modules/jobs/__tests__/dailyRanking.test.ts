@@ -28,6 +28,14 @@ describe("daily job ranking", () => {
     assert.deepEqual(ranked.map((item) => item.id), ["apply-high", "apply-low", "review-high"]);
   });
 
+  it("keeps a hard-filter failure out of the daily selection", () => {
+    const ranked = rankDailyJobs([
+      job({ id: "excluded", decision: "APPLY", matchScore: 99, hardFilterFailure: true }),
+      job({ id: "review", decision: "REVIEW", matchScore: 60 }),
+    ]);
+    assert.deepEqual(ranked.map((item) => item.id), ["review"]);
+  });
+
   it("keeps hard SKIP jobs out of the daily selection", () => {
     const ranked = rankDailyJobs([
       job({ id: "skip", decision: "SKIP", matchScore: 99 }),
