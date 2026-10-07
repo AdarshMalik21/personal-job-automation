@@ -5,7 +5,8 @@ import type {
 } from "@personal-job-automation/shared/types";
 
 const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-const API_URL = configuredApiUrl || (process.env.NODE_ENV === "production" ? "" : "http://localhost:5000/api");
+const API_URL =
+  process.env.NODE_ENV === "production" ? "/api/backend" : configuredApiUrl || "http://localhost:5000/api";
 
 const request = async <T>(
   path: string,
