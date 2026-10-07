@@ -4,7 +4,7 @@ import { ApplicationPreparationModel } from "../../../models/ApplicationPreparat
 import { DailySelectionModel } from "../../../models/DailySelection.js";
 import { JobModel } from "../../../models/Job.js";
 import {
-  LoggingNotificationProvider,
+  createNotificationProvider,
   type DailyJobReport,
   type DailyReportJob,
   type NotificationProvider,
@@ -248,6 +248,6 @@ export const runDailyReport = async (
     dateKey,
     jobs,
     store: dependencies.store ?? new MongooseDailySelectionStore(),
-    notifier: dependencies.notifier ?? new LoggingNotificationProvider(),
+    notifier: dependencies.notifier ?? createNotificationProvider(),
   });
 };

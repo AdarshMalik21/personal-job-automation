@@ -140,6 +140,14 @@ export default function ApplicationReviewPage() {
           <button className="primary-button" disabled={!review.canSubmit || busy} onClick={() => setConfirming(true)}>Approve & Submit Application</button>
         </section>
         <section className="review-card">
+          <p className="kicker">MISSING INFORMATION</p>
+          {(review.preparation.missingInformation ?? []).length === 0 ? (
+            <p>No missing application information is recorded.</p>
+          ) : (
+            <ul>{(review.preparation.missingInformation ?? []).map((item) => <li key={item}>{item}</li>)}</ul>
+          )}
+        </section>
+        <section className="review-card">
           <p className="kicker">PREPARED ANSWERS</p>
           <ul>{(review.preparation.generatedAnswers ?? []).map((answer) => <li key={answer.question}>{answer.question}: {answer.answer ?? answer.status}</li>)}</ul>
           {(review.preparation.warnings ?? []).map((warning) => <p key={warning}>{warning}</p>)}

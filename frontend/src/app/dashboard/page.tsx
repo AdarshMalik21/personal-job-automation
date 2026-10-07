@@ -20,6 +20,17 @@ import {
 } from "../../lib/api";
 
 const tokenKey = "job-automation-token";
+const submittedStatuses = new Set([
+  "submitted",
+  "interview",
+  "offer",
+  "rejected",
+  "withdrawn",
+  "follow_up_required",
+  "submission_failed",
+  "submission_unknown",
+]);
+const preparedStatuses = new Set(["preparing", "ready_for_review", "needs_information"]);
 const initialFilters: JobListParams = { page: 1, limit: 12, sortBy: "score" };
 const scoreOf = (job: DashboardJob) => job.match.matchScore ?? job.match.score ?? 0;
 const decisionOf = (job: DashboardJob) => job.match.decision ?? "REVIEW";
@@ -188,23 +199,38 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="daily-list">
-            {daily.jobs.map((job) => (
+            {daily.jobs.map((job) => {
+              const preparationStatus = job.preparationStatus ?? "not_started";
+              const submitted = submittedStatuses.has(job.applicationStatus);
+              const prepared = preparedStatuses.has(preparationStatus);
+              const missing = job.missingInformation ?? [];
+              return (
               <article className="daily-row" key={job.jobId}>
                 <strong className="daily-rank">{job.rank}</strong>
                 <div>
                   <h3><Link href={`/jobs/${job.jobId}`}>{job.title}</Link></h3>
                   <p>{job.company} · {job.location ?? "Location unknown"} · {job.remoteStatus ?? "Work mode unknown"}</p>
+                  <p>{job.freshness} · {preparationStatus.replaceAll("_", " ")} · {job.applicationStatus.replaceAll("_", " ")}</p>
+                  {preparationStatus === "needs_information" && missing.length > 0 && (
+                    <p className="daily-missing">Missing: {missing.join(", ")}</p>
+                  )}
                 </div>
                 <div className="job-row-score"><strong>{job.matchScore}</strong><span>/100</span></div>
                 <span className={`decision-badge ${job.decision.toLowerCase()}`}>{job.decision}</span>
-                <span>{job.applicationStatus.replaceAll("_", " ")}</span>
+                <span className={`fresh-badge ${job.freshness}`}>{job.freshness}</span>
                 <div className="job-row-actions">
                   <Link className="text-button" href={`/jobs/${job.jobId}`}>View Job</Link>
-                  <button className="text-button" onClick={() => prepare(job.jobId)}>Prepare Application</button>
-                  <Link className="text-button" href={`/jobs/${job.jobId}`}>Track Application</Link>
+                  {submitted ? (
+                    <Link className="text-button" href={`/jobs/${job.jobId}`}>Track Application</Link>
+                  ) : prepared ? (
+                    <Link className="text-button" href={`/jobs/${job.jobId}/review`}>Review Application</Link>
+                  ) : (
+                    <button className="text-button" onClick={() => prepare(job.jobId)}>Prepare Application</button>
+                  )}
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

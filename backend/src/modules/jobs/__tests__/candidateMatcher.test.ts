@@ -129,6 +129,23 @@ describe("candidate matching", () => {
     assert.equal(result.eligible, false);
   });
 
+  it("skips a target engineering role when the posting requires more experience", () => {
+    const result = matchCandidateToJob(
+      candidate,
+      makeJob({
+        title: "Senior Software Development Engineer",
+        company: "Razorpay",
+        experienceRequirement: "",
+        description: "3+ years of experience in Technology.",
+      }),
+    );
+
+    assert.equal(result.roleAnalysis.classification, "TARGET");
+    assert.equal(result.decision, "SKIP");
+    assert.equal(result.eligible, false);
+    assert.match(result.hardFilterFailures.join(" "), /3 years/);
+  });
+
   it("does not let a high technical score override a hard filter", () => {
     const result = matchCandidateToJob(
       candidate,

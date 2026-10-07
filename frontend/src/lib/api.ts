@@ -136,6 +136,8 @@ export type DailySelectionJob = {
   officialApplicationUrl?: string;
   applicationStatus: string;
   preparationAvailable: boolean;
+  preparationStatus?: string;
+  missingInformation?: string[];
   rankingReason: string;
 };
 

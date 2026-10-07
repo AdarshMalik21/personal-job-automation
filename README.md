@@ -188,7 +188,11 @@ The scheduled discovery job calls `runJobDiscovery({ validateApplicationUrls: tr
 
 The initial list is Groww and Razorpay on Greenhouse, CRED on Lever, and Linear on Ashby. These are public board identifiers, not secrets. Add another company by appending a config entry. A company career page also needs that company's JSON endpoint and parser. The worker file does not list companies. Discovery upserts job documents and does not create or reset Application records.
 
-After a successful discovery run, the worker enqueues one `DAILY_REPORT` job. Ranking reuses the stored match decision and score, keeps at most 10 jobs, and skips hard `SKIP` results. The report idempotency key is `daily-job-report:YYYY-MM-DD:Asia/Kolkata`. A failed enqueue releases that key. A failed send is retried by the existing queue and is not marked delivered. The default notification provider writes the report to the worker log. The dashboard section “Today's Best Matches” reads the saved selection. Opening Prepare uses the existing preparation API and review screen. Approve & Submit is still required before any application is submitted.
+After a successful discovery run, the worker enqueues one `DAILY_REPORT` job. Ranking reuses the stored match decision and score, keeps at most 10 jobs, and skips hard `SKIP` results and hard-filter failures. The report idempotency key is `daily-job-report:YYYY-MM-DD:Asia/Kolkata`. A failed enqueue releases that key. A failed send is stored as `failed`, retried by the existing queue, and is not marked delivered. A later success updates that same selection.
+
+`NOTIFICATION_PROVIDER` defaults to `log`. The logging provider writes the date, job count, title, company, location, work mode, score, decision, freshness, application status, official application URL, and dashboard link. It does not send email. No SMTP credentials are configured. Setting `NOTIFICATION_PROVIDER=smtp` fails the send instead of pretending an email went out. Local development does not need email credentials.
+
+The dashboard section “Today's Best Matches” reads that selection and overlays the current application and preparation state. A job that is not prepared offers Prepare Application. A prepared job offers Review Application and shows missing information when preparation needs it. A submitted job offers Track Application. Approve & Submit is still required before any application is submitted.
 
 ## Phase boundary
 

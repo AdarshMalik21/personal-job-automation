@@ -424,6 +424,9 @@ button {
   font-weight: 650;
   text-align: center;
 }
+.daily-missing {
+  color: #8a4b12;
+}
 .section-heading p,
 .jobs-context {
   margin: 0;
