@@ -1000,3 +1000,49 @@ button {
 .tracking-draft { width: 100%; border: 1px solid var(--line); background: white; padding: 0.6rem; font: inherit; }
 button:disabled { opacity: 0.45; cursor: default; }
 @media (max-width: 800px) { .review-grid { grid-template-columns: 1fr; } }
+
+.assist-app { min-height: 100vh; }
+.assist-nav { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; width: min(1080px, calc(100% - 2rem)); margin: 0 auto; padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.assist-nav-main, .assist-nav-side { display: flex; gap: 0.9rem; flex-wrap: wrap; align-items: center; }
+.assist-nav a, .assist-nav button { color: var(--ink); text-decoration: none; background: none; border: 0; padding: 0.35rem 0; }
+.assist-nav a[aria-current="page"] { color: var(--green); font-weight: 700; }
+.assist-nav-side a, .assist-nav-side button { color: var(--muted); font-size: 0.85rem; }
+.assist-page { width: min(1080px, calc(100% - 2rem)); margin: 0 auto; padding: 1.5rem 0 4rem; display: grid; gap: 2rem; }
+.assist-header, .assist-detail-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; }
+.assist-header h1, .assist-page-title h1, .assist-detail h1 { margin: 0; letter-spacing: -0.04em; }
+.assist-header h1 { font-size: 1.8rem; }
+.assist-page-title p, .assist-section-head p, .assist-meta, .assist-muted { color: var(--muted); margin: 0.35rem 0 0; line-height: 1.5; }
+.assist-discovery { display: grid; justify-items: end; gap: 0.45rem; }
+.assist-primary { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; background: var(--green); color: white; text-decoration: none; border: 0; padding: 0.7rem 1rem; }
+.assist-summary, .assist-progress { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; }
+.assist-progress { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.assist-summary a, .assist-progress a, .assist-progress button, .assist-progress > div { background: white; border: 1px solid var(--line); padding: 1rem; text-decoration: none; color: inherit; display: grid; gap: 0.4rem; text-align: left; }
+.assist-progress button.active { border-color: var(--green); }
+.assist-summary strong, .assist-progress strong { font-size: 1.7rem; letter-spacing: -0.04em; }
+.assist-section { display: grid; gap: 1rem; }
+.assist-section-head h2, .assist-detail h2 { margin: 0; font-size: 1.35rem; }
+.assist-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.assist-card, .assist-row, .assist-empty { background: white; border: 1px solid var(--line); padding: 1.15rem 1.2rem; display: grid; gap: 0.45rem; align-content: start; }
+.assist-empty { border-style: dashed; }
+.assist-card h3, .assist-row h3, .assist-empty h3 { margin: 0; font-size: 1.15rem; }
+.assist-company { margin: 0; font-weight: 700; }
+.assist-score, .assist-status { margin: 0; }
+.assist-why p { margin: 0.4rem 0 0; font-weight: 700; }
+.assist-why ul, .assist-reasons { margin: 0.25rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.25rem; }
+.assist-card .assist-primary, .assist-row .assist-primary { justify-self: start; margin-top: 0.4rem; }
+.assist-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
+.assist-filters label { display: grid; gap: 0.35rem; color: var(--muted); font-size: 0.8rem; }
+.assist-filters input, .assist-filters select { border: 1px solid var(--line); background: white; color: var(--ink); padding: 0.65rem 0.7rem; width: 100%; }
+.assist-list { display: grid; gap: 0.75rem; }
+.assist-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.assist-alert { background: #fdeceb; border: 1px solid var(--red); padding: 1rem; display: grid; gap: 0.4rem; }
+.assist-alert p, .assist-error { color: var(--red); margin: 0; }
+.assist-description { line-height: 1.65; max-width: 68ch; }
+.assist-back { color: var(--muted); text-decoration: none; }
+.assist-detail { display: grid; gap: 1.5rem; }
+@media (max-width: 800px) {
+  .assist-cards, .assist-summary, .assist-progress { grid-template-columns: 1fr; }
+  .assist-header, .assist-detail-top { flex-direction: column; }
+  .assist-discovery { justify-items: start; }
+  .assist-row { grid-template-columns: 1fr; }
+}

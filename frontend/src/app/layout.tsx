@@ -6,8 +6,8 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-    title: "Job Automation Console",
-    description: "Private workspace for personal job search automation.",
+    title: "Job Assistant",
+    description: "A private workspace for deciding which jobs to pursue.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
