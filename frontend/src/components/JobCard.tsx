@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { DashboardJob } from "../lib/api";
-import { prepareApplication } from "../lib/api";
+import { prepareApplication, startBrowserRun } from "../lib/api";
+import { beginApplicationReview, createRunGuard } from "../lib/browserFlow";
 import {
   applicationLabel,
   experienceLabel,
@@ -26,17 +27,37 @@ export function JobCard({
 }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [retryBrowser, setRetryBrowser] = useState(false);
+  const guard = useRef(createRunGuard());
   const action = recommendedAction(job);
   const prepare = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      await prepareApplication(token, job.id);
-      window.location.assign(`/jobs/${job.id}/review`);
-    } catch (requestError: unknown) {
-      setError(requestError instanceof Error ? requestError.message : "Preparation failed");
-      setBusy(false);
+    if (!action.prepare && !retryBrowser) {
+      window.location.assign(action.href ?? `/jobs/${job.id}`);
+      return;
     }
+    setError("");
+    await guard.current(async () => {
+      setBusy(true);
+      try {
+        const outcome = await beginApplicationReview({
+          prepare: () => retryBrowser ? Promise.resolve() : prepareApplication(token, job.id),
+          startBrowser: () => startBrowserRun(token, job.id),
+        });
+        if (outcome.status === "prepare_failed") {
+          setRetryBrowser(false);
+          setError(outcome.message);
+          return;
+        }
+        if (outcome.status === "browser_failed") {
+          setRetryBrowser(true);
+          setError(outcome.message);
+          return;
+        }
+        window.location.assign(`/jobs/${job.id}/review`);
+      } finally {
+        setBusy(false);
+      }
+    });
   };
 
   return (
@@ -58,7 +79,7 @@ export function JobCard({
       {variant === "review" ? (
         <Link className="assist-primary" href={`/jobs/${job.id}`}>Review</Link>
       ) : action.prepare ? (
-        <button className="assist-primary" type="button" onClick={prepare} disabled={busy}>{busy ? "Preparing" : action.label}</button>
+        <button className="assist-primary" type="button" onClick={prepare} disabled={busy}>{busy ? "Preparing application..." : retryBrowser ? "Retry Browser Run" : action.label}</button>
       ) : (
         <Link className="assist-primary" href={action.href ?? `/jobs/${job.id}`}>{action.label}</Link>
       )}

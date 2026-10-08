@@ -20,6 +20,7 @@ export type BrowserRunHooks = {
   onHeld?: (session: { browser: Browser; context: BrowserContext; page: Page }) => void;
   isStopped?: () => boolean;
   holdForReview?: boolean;
+  jobId?: string;
 };
 export type BrowserRunnerInput = {
   job: Pick<Job, "officialApplicationUrl" | "status"> & { match?: { decision?: string } };
@@ -172,6 +173,7 @@ export const runApplication = async (
     hooks.onBrowserCreated?.(browser, context);
     const page = await context.newPage();
     await page.goto(input.job.officialApplicationUrl, { waitUntil: "domcontentloaded", timeout: 15_000 });
+    console.info(`[ApplicationBrowser] Application page opened${hooks.jobId ? ` jobId=${hooks.jobId}` : ""}`);
     await page
       .waitForSelector("input, textarea, select", { state: "attached", timeout: 10_000 })
       .catch(() => undefined);

@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { getJob, prepareApplication, type DashboardJob } from "../../../lib/api";
+import { useEffect, useRef, useState } from "react";
+import { getJob, prepareApplication, startBrowserRun, type DashboardJob } from "../../../lib/api";
+import { beginApplicationReview, createRunGuard } from "../../../lib/browserFlow";
 import {
   applicationLabel,
   detailAction,
@@ -27,7 +28,10 @@ export default function JobDetailPage() {
   const [job, setJob] = useState<DashboardJob>();
   const [token, setToken] = useState<string>();
   const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [retryBrowser, setRetryBrowser] = useState(false);
+  const guard = useRef(createRunGuard());
 
   useEffect(() => {
     const storedToken = localStorage.getItem(tokenKey);
@@ -51,18 +55,33 @@ export default function JobDetailPage() {
   const action = detailAction(job);
   const reasons = needsReview(job) ? reviewReasons(job) : isRecommended(job) ? matchReasons(job) : [exclusionReason(job)];
   const run = async () => {
-    if (!action.prepare) {
+    if (!action.prepare && !retryBrowser) {
       router.push(action.href ?? `/jobs/${job.id}/review`);
       return;
     }
-    setBusy(true);
-    try {
-      await prepareApplication(token, job.id);
-      router.push(`/jobs/${job.id}/review`);
-    } catch (requestError: unknown) {
-      setError(requestError instanceof Error ? requestError.message : "Preparation failed");
-      setBusy(false);
-    }
+    setActionError("");
+    await guard.current(async () => {
+      setBusy(true);
+      try {
+        const outcome = await beginApplicationReview({
+          prepare: () => retryBrowser ? Promise.resolve() : prepareApplication(token, job.id),
+          startBrowser: () => startBrowserRun(token, job.id),
+        });
+        if (outcome.status === "prepare_failed") {
+          setRetryBrowser(false);
+          setActionError(outcome.message);
+          return;
+        }
+        if (outcome.status === "browser_failed") {
+          setRetryBrowser(true);
+          setActionError(outcome.message);
+          return;
+        }
+        router.push(`/jobs/${job.id}/review`);
+      } finally {
+        setBusy(false);
+      }
+    });
   };
 
   return (
@@ -77,7 +96,8 @@ export default function JobDetailPage() {
           <p className="assist-meta">{postedLabel(job)}</p>
           <p className="assist-status">Status: {applicationLabel(job.applicationStatus)}</p>
         </div>
-        {actionable && <button className="assist-primary" type="button" onClick={run} disabled={busy}>{busy ? "Preparing" : action.label}</button>}
+        {actionable && <button className="assist-primary" type="button" onClick={run} disabled={busy}>{busy ? "Preparing application..." : retryBrowser ? "Retry Browser Run" : action.label}</button>}
+        {actionError && <p className="assist-error">{actionError}</p>}
       </header>
       <section>
         <h2>{needsReview(job) ? "Why this needs review" : isRecommended(job) ? "Why this job matches you" : "Why this job is excluded"}</h2>

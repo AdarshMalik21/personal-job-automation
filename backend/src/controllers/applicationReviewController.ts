@@ -5,6 +5,7 @@ import { ApplicationPreparationModel } from "../models/ApplicationPreparation.js
 import { CandidateProfileModel } from "../models/CandidateProfile.js";
 import { JobModel } from "../models/Job.js";
 import { activeRuns, browserSessions } from "../modules/applications/browserSession.js";
+import { reconcileBrowserRun } from "./applicationBrowserController.js";
 import { submissionRuntime } from "../modules/applications/applicationSubmission.js";
 import { selectApplicationFrame } from "../modules/applications/applicationPageInspector.js";
 import { writeApplicationField } from "../modules/applications/applicationRunner.js";
@@ -224,6 +225,8 @@ export const getReview: RequestHandler = async (request, response, next) => {
       notFound(response, "Application preparation not found");
       return;
     }
+    const reconciled = await reconcileBrowserRun(jobId, context.preparation);
+    if (reconciled.sessionAvailable) browserSessions.touch(jobId);
     response.json({ success: true, data: { review: reviewPayload(jobId, context) } });
   } catch (error) {
     next(error);
@@ -282,9 +285,10 @@ export const updateReviewField: RequestHandler = async (request, response, next)
       return;
     }
     const current = fields[index]!;
-    const session = browserSessions.get(jobId);
+    const session = browserSessions.get(jobId, { touch: true });
     if (!session) {
-      response.status(409).json({ success: false, message: "BROWSER_SESSION_EXPIRED" });
+      await reconcileBrowserRun(jobId, context.preparation);
+      response.status(409).json({ success: false, message: "Browser session expired. Restart Browser Run." });
       return;
     }
     let verified = false;
@@ -344,7 +348,8 @@ export const submitReviewedApplication: RequestHandler = async (request, respons
       return;
     }
     const browserRun = browserRunOf(context.preparation);
-    const session = browserSessions.get(jobId);
+    const session = browserSessions.get(jobId, { touch: true });
+    if (!session) await reconcileBrowserRun(jobId, context.preparation);
     const clicked = Boolean((context.application?.submission as { clicked?: boolean } | undefined)?.clicked);
     const blockers = submissionBlockers({
       applicationStatus: context.application?.status,
@@ -367,6 +372,7 @@ export const submitReviewedApplication: RequestHandler = async (request, respons
         response.status(409).json({ success: false, message: "Browser run stopped by user" });
         return;
       }
+      console.info(`[ApplicationBrowser] Final submission requested jobId=${jobId}`);
       await persistRun(context.preparation._id, browserRun, { status: "SUBMITTING" });
       const attempt = await submissionRuntime.submit(session.page, {
         isStopped: () => session.isStopped(),

@@ -159,6 +159,25 @@ export const prepareApplication = (token: string, jobId: string) =>
     method: "POST",
   });
 
+export type BrowserRunState = {
+  status?: string;
+  reason?: string;
+  finalControl?: string;
+  sessionAvailable?: boolean;
+  fieldsDetected?: number;
+  fields?: ReviewField[];
+  runId?: string;
+};
+
+export const startBrowserRun = (token: string, jobId: string) =>
+  request<{ browserRun: BrowserRunState }>(`/applications/${encodeURIComponent(jobId)}/browser-run`, {
+    ...withToken(token),
+    method: "POST",
+  });
+
+export const getBrowserRun = (token: string, jobId: string) =>
+  request<{ browserRun: BrowserRunState }>(`/applications/${encodeURIComponent(jobId)}/browser-run`, withToken(token));
+
 export const getDashboardSummary = (token: string) =>
   request<DashboardSummary>("/dashboard/summary", {
     headers: { Authorization: `Bearer ${token}` },

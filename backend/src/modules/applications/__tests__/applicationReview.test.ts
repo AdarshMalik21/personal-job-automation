@@ -341,7 +341,7 @@ describe("application review", () => {
     const result = response();
     await updateReviewField(request({ elementId: "preferred", value: "Asha P." }), result as never, () => undefined);
     assert.equal(result.statusCode, 409);
-    assert.equal(result.body?.message, "BROWSER_SESSION_EXPIRED");
+    assert.equal(result.body?.message, "Browser session expired. Restart Browser Run.");
     assert.equal(state.profileWrites, 0);
     const saved = ((state.preparation.browserRun as { fields: ReviewedApplicationField[] }).fields)[0];
     assert.equal(saved?.currentValue, "Asha");
