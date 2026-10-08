@@ -65,6 +65,7 @@ export const resolveApplicationDestination = async (
       return { type: "UNKNOWN_EXTERNAL", reason: `HTTP ${response.status}` };
     }
     const type = classifyApplicationUrl(current);
+    if (type === "UNKNOWN_EXTERNAL") return { type: "UNKNOWN_EXTERNAL" };
     if (type === "NAUKRI_INTERNAL") {
       const html = await response.text().catch(() => "");
       const external = officialUrlInHtml(html);

@@ -38,11 +38,17 @@ export const classifyApplicationUrl = (url: string | undefined): ApplicationDest
   if (host === "myworkdayjobs.com" || host.endsWith(".myworkdayjobs.com") || host === "workday.com" || host.endsWith(".workday.com")) {
     return "WORKDAY";
   }
-  return "COMPANY_CAREER_PAGE";
+  return "UNKNOWN_EXTERNAL";
 };
 
-export const applicationDestinationRank = (url: string | undefined): number =>
-  RANK[classifyApplicationUrl(url)] * 1_000_000;
+export const applicationDestinationRank = (
+  url: string | undefined,
+  job?: { analysis?: unknown },
+): number => {
+  const stored = (job?.analysis as { applicationUrlType?: unknown } | null | undefined)?.applicationUrlType;
+  if (stored === "COMPANY_CAREER_PAGE") return RANK.COMPANY_CAREER_PAGE * 1_000_000;
+  return RANK[classifyApplicationUrl(url)] * 1_000_000;
+};
 
 export const browserAutomationAllowed = (job: { analysis?: unknown }): boolean => {
   const destination = (job.analysis as { applicationUrlType?: unknown } | null | undefined)?.applicationUrlType;

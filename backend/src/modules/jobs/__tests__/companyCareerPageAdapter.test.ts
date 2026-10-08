@@ -38,6 +38,7 @@ describe("CompanyCareerPageAdapter", () => {
     const [job] = await adapter.fetchJobs();
     assert.equal(job?.externalJobId, "company-1");
     assert.equal(job?.officialApplicationUrl, "https://acme.test/apply/1");
+    assert.equal(job?.analysis?.applicationUrlType, "COMPANY_CAREER_PAGE");
     assert.equal(job?.company, "Acme");
   });
 

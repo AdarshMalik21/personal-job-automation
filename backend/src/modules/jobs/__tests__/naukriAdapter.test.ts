@@ -207,7 +207,6 @@ describe("Naukri mapping and application URLs", () => {
       { location: "https://jobs.lever.co/acme/123", type: "LEVER" },
       { location: "https://jobs.ashbyhq.com/acme/123", type: "ASHBY" },
       { location: "https://acme.myworkdayjobs.com/careers/job/1", type: "WORKDAY" },
-      { location: "https://careers.acme.com/jobs/1", type: "COMPANY_CAREER_PAGE" },
     ];
     for (const item of cases) {
       const resolved = await resolveApplicationDestination("https://www.naukri.com/job-listings-1", {
@@ -217,6 +216,12 @@ describe("Naukri mapping and application URLs", () => {
       assert.equal(resolved.type, item.type);
       assert.equal(resolved.finalUrl, item.location);
     }
+    const thirdParty = await resolveApplicationDestination("https://www.naukri.com/job-listings-1", {
+      timeoutMs: 1000,
+      fetcher: async (url) => url.includes("naukri.com") ? redirect("https://random-third-party-site.com/jobs/123") : jsonResponse("ok"),
+    });
+    assert.equal(thirdParty.type, "UNKNOWN_EXTERNAL");
+    assert.equal(thirdParty.finalUrl, undefined);
     const internal = await resolveApplicationDestination("https://www.naukri.com/job-listings-1", {
       timeoutMs: 1000,
       fetcher: async () => ({ ...jsonResponse("<html>apply</html>"), status: 200, ok: true }) as Response,
@@ -252,6 +257,31 @@ describe("Naukri mapping and application URLs", () => {
     assert.equal(mapped?.sourceUrl, undefined);
   });
 
+  it("does not store an unknown external redirect as the official application URL", async () => {
+    const adapter = new NaukriAdapter({
+      delay: async () => undefined,
+      config: {
+        ...readNaukriConfig({}),
+        queries: ["MERN Developer"],
+        locations: ["Noida"],
+        maxPages: 1,
+        delayMs: 0,
+        maxUrlResolutions: 5,
+      },
+      fetcher: async (url) => {
+        if (url.includes("jobapi")) {
+          return jsonResponse({ jobDetails: [record({ companyApplyJob: true, jdURL: "/job-listings-acme-1" })] });
+        }
+        if (url.includes("naukri.com")) return redirect("https://random-third-party-site.com/jobs/123");
+        return jsonResponse("landed");
+      },
+    });
+    const [job] = await adapter.fetchJobs();
+    assert.equal(job?.analysis?.applicationUrlType, "UNKNOWN_EXTERNAL");
+    assert.equal(job?.officialApplicationUrl, undefined);
+    assert.equal(job?.sourceUrl, "https://www.naukri.com/job-listings-acme-1");
+  });
+
   it("keeps one canonical job and prefers the official application URL", () => {
     const naukri = normalizeJob({
       ...mapNaukriJob(record({ jobDescription: "A very long Naukri description that should not outrank the official posting." }))!,
@@ -274,6 +304,7 @@ describe("Naukri mapping and application URLs", () => {
       location: "Noida",
       description: "Short",
       officialApplicationUrl: "https://careers.acme.com/jobs/11",
+      analysis: { applicationUrlType: "COMPANY_CAREER_PAGE" },
     });
     const withGreenhouse = deduplicateJobs([naukri, greenhouse]);
     assert.equal(withGreenhouse.jobs.length, 1);

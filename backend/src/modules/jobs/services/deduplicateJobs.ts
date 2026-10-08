@@ -45,14 +45,14 @@ const completeness = (job: Job): number =>
 
 const prefer = (left: Job, right: Job): Job => {
   const leftScore =
-    applicationDestinationRank(left.officialApplicationUrl) +
+    applicationDestinationRank(left.officialApplicationUrl, left) +
     (left.officialApplicationUrl ? 1000 : 0) +
     (left.description?.length ?? 0) +
     (left.location ? 100 : 0) +
     completeness(left) +
     confidenceRank[left.canonicalIdentity.confidence] * 10;
   const rightScore =
-    applicationDestinationRank(right.officialApplicationUrl) +
+    applicationDestinationRank(right.officialApplicationUrl, right) +
     (right.officialApplicationUrl ? 1000 : 0) +
     (right.description?.length ?? 0) +
     (right.location ? 100 : 0) +

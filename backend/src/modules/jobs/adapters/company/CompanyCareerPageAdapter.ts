@@ -53,7 +53,11 @@ export class CompanyCareerPageAdapter implements JobSourceAdapter {
         options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         options.signal,
       );
-      return this.config.parser(response, this.config);
+      return this.config.parser(response, this.config).map((job) => (
+        job.officialApplicationUrl
+          ? { ...job, analysis: { ...(job.analysis ?? {}), applicationUrlType: "COMPANY_CAREER_PAGE" } }
+          : job
+      ));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       throw new Error(
