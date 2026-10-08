@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import type { CandidateProfile, Job } from "@personal-job-automation/shared/types";
 import type { FetchLike } from "../adapters/JobSourceAdapter.js";
-import { runJobDiscovery } from "../services/jobDiscovery.js";
+import { PermanentDiscoveryError, runJobDiscovery } from "../services/jobDiscovery.js";
 import type { JobRepository } from "../services/jobPersistence.js";
 import { createJobSourceAdapters, type JobSourceConfig } from "../sources/jobSourceConfig.js";
 
@@ -42,9 +42,9 @@ describe("configured job discovery", () => {
   it("runs every configured source through ingestion, matching, and persistence", async () => {
     const fetcher: FetchLike = async (url) => {
       if (url.includes("greenhouse.io")) return response({ jobs: [greenhouseJob] });
-      if (url.includes("lever.co")) throw new Error("request timed out after 10000ms");
+      if (url.includes("lever.co")) return response([]);
       if (url.includes("ashbyhq.com")) return response({ jobs: [] });
-      if (url.includes("broken.test")) return response({ unexpected: true });
+      if (url.includes("broken.test")) return response({ jobs: [] });
       return response({ positions: [] });
     };
     const sources: JobSourceConfig[] = [
@@ -77,9 +77,7 @@ describe("configured job discovery", () => {
         type: "company",
         companyName: "Broken",
         endpoint: "https://broken.test/careers.json",
-        parser: () => {
-          throw new Error("company response is malformed");
-        },
+        parser: () => [],
       },
     ];
     const saved: Job[] = [];
@@ -109,8 +107,8 @@ describe("configured job discovery", () => {
       assert.equal(result.stats.totalInvalid, 1);
       assert.equal(result.stats.totalDuplicates, 1);
       assert.equal(result.stats.totalFresh, 1);
-      assert.equal(result.sources.filter((source) => source.status === "success").length, 3);
-      assert.equal(result.sources.filter((source) => source.status === "failed").length, 2);
+      assert.equal(result.sources.filter((source) => source.status === "success").length, 5);
+      assert.equal(result.sources.filter((source) => source.status === "failed").length, 0);
       assert.equal(result.sources.find((source) => source.source === "ashby")?.fetched, 0);
       assert.equal(result.sources.find((source) => source.source === "ashby")?.status, "success");
       assert.equal(saved.length, 1);
@@ -120,7 +118,7 @@ describe("configured job discovery", () => {
       assert.equal(typeof saved[0]?.match?.decision, "string");
       assert.equal(urlChecks, 1);
       assert.equal(lines.some((line) => line.includes("Job discovery started sources=5")), true);
-      assert.equal(lines.some((line) => line.includes("attempted=5") && line.includes("succeeded=3") && line.includes("failed=2")), true);
+      assert.equal(lines.some((line) => line.includes("attempted=5") && line.includes("succeeded=5") && line.includes("failed=0")), true);
       assert.equal(lines.some((line) => line.includes("persisted=1")), true);
     } finally {
       console.info = original;
@@ -145,6 +143,78 @@ describe("configured job discovery", () => {
       },
     });
     assert.equal(urlChecks, 0);
+  });
+
+  it("fails before persistence when any configured source fails", async () => {
+    let saved = 0;
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map((value) => String(value)).join(" "));
+    };
+    try {
+      await assert.rejects(
+        () => runJobDiscovery({
+          adapters: createJobSourceAdapters([
+            { id: "greenhouse", enabled: true, type: "greenhouse", boardToken: "acme", companyName: "Acme" },
+            { id: "lever", enabled: true, type: "lever", site: "acme", companyName: "Acme" },
+          ], {
+            fetcher: async (url) => {
+              if (String(url).includes("lever.co")) throw new Error("request timed out after 10000ms");
+              return response({ jobs: [greenhouseJob] });
+            },
+          }),
+          repository: { upsert: async () => { saved += 1; } },
+          candidate,
+        }),
+        (error: unknown) => {
+          assert.equal(error instanceof PermanentDiscoveryError, false);
+          assert.equal(error instanceof Error, true);
+          assert.match((error as Error).message, /failed for a configured source/);
+          return true;
+        },
+      );
+      assert.equal(saved, 0);
+      assert.equal(warnings.some((line) => line.includes("attempted=2") && line.includes("succeeded=1") && line.includes("failed=1")), true);
+    } finally {
+      console.warn = original;
+    }
+  });
+
+  it("fails before persistence when every configured source fails", async () => {
+    let saved = 0;
+    await assert.rejects(
+      () => runJobDiscovery({
+        adapters: createJobSourceAdapters([
+          { id: "greenhouse", enabled: true, type: "greenhouse", boardToken: "acme", companyName: "Acme" },
+          { id: "lever", enabled: true, type: "lever", site: "acme", companyName: "Acme" },
+        ], {
+          fetcher: async () => {
+            throw new Error("source unavailable");
+          },
+        }),
+        repository: { upsert: async () => { saved += 1; } },
+        candidate,
+      }),
+      (error: unknown) => {
+        assert.equal(error instanceof PermanentDiscoveryError, false);
+        assert.match((error as Error).message, /failed for every configured source/);
+        return true;
+      },
+    );
+    await assert.rejects(
+      () => runJobDiscovery({
+        adapters: [],
+        repository: { upsert: async () => { saved += 1; } },
+        candidate,
+      }),
+      (error: unknown) => {
+        assert.equal(error instanceof PermanentDiscoveryError, false);
+        assert.match((error as Error).message, /no configured sources/);
+        return true;
+      },
+    );
+    assert.equal(saved, 0);
   });
 
   it("fails before persistence when no usable candidate is available", async () => {

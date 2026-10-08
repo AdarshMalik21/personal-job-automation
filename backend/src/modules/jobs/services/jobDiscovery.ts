@@ -111,8 +111,14 @@ export const runJobDiscovery = async (dependencies: DiscoveryDependencies = {}) 
   console.info(
     `Job discovery results attempted=${result.sources.length} succeeded=${succeeded} failed=${failed} raw=${result.stats.totalFetched} invalid=${result.stats.totalInvalid} duplicates=${result.stats.totalDuplicates} fresh=${result.stats.totalFresh} stale=${result.stats.totalStale} unknownFreshness=${result.stats.totalUnknownFreshness} urlReachable=${countUrlStatus(result.jobs, "reachable")} urlUnreachable=${countUrlStatus(result.jobs, "unreachable")} urlInvalid=${countUrlStatus(result.jobs, "invalid")} urlUnknown=${countUrlStatus(result.jobs, "unknown")}`,
   );
-  if (adapters.length > 0 && result.sources.length > 0 && failed === result.sources.length) {
-    throw new Error("Job discovery failed for every configured source");
+  if (adapters.length === 0 || failed > 0) {
+    const reason = adapters.length === 0
+      ? "Job discovery has no configured sources"
+      : failed === result.sources.length
+        ? "Job discovery failed for every configured source"
+        : "Job discovery failed for a configured source";
+    console.warn(`Job discovery status=failed attempted=${result.sources.length} succeeded=${succeeded} failed=${failed} reason=${reason}`);
+    throw new Error(reason);
   }
   const jobs: Job[] = result.jobs.map((item) => {
     const match = matchCandidateToJob(candidate, item.job);

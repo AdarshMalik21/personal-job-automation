@@ -113,6 +113,35 @@ describe("job discovery worker", () => {
     assert.equal((await queue.get(failed[0] ?? ""))?.status, "failed");
   });
 
+  it("retries a partial source failure and does not schedule the daily report", async () => {
+    const commands = new MemoryQueueCommands();
+    const queue = new JobQueue(commands);
+    let reports = 0;
+    let saved = 0;
+    const handlers = discoveryHandlers(() => runJobDiscovery({
+      adapters: [
+        { source: "greenhouse", fetchJobs: async () => [rawJob()] },
+        { source: "lever", fetchJobs: async () => { throw new Error("request timed out after 10000ms"); } },
+      ],
+      repository: { upsert: async () => { saved += 1; } },
+      candidate,
+      validateApplicationUrls: false,
+    }), {
+      reserve: (key) => commands.setNx(key, "1"),
+      release: (key) => commands.del(key),
+      enqueue: async (payload) => {
+        reports += 1;
+        return queue.enqueue(DAILY_REPORT, payload);
+      },
+    });
+    await queue.enqueue(JOB_DISCOVERY, { scheduledFor: "2026-10-08" });
+    const outcome = await processNextJob(queue, handlers);
+    assert.equal(outcome, "retry");
+    assert.equal(saved, 0);
+    assert.equal(reports, 0);
+    assert.equal((await commands.due("queue:delayed", Number.MAX_SAFE_INTEGER)).length, 1);
+  });
+
   it("retries a transient database failure and keeps a candidate failure from retrying", async () => {
     const commands = new MemoryQueueCommands();
     const queue = new JobQueue(commands);

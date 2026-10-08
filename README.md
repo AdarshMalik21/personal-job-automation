@@ -186,7 +186,7 @@ Pending, processing, retry, and failed job state stays in Redis. A job is claime
 
 ### Configured sources
 
-The scheduled discovery job calls `runJobDiscovery({ validateApplicationUrls: true })`. When no adapters are injected, discovery loads `backend/src/modules/jobs/sources/jobSourceConfig.ts`. Enabled entries become the existing Greenhouse, Lever, Ashby, or company career-page adapters. Disabled entries are skipped. One failed source does not cancel the others.
+The scheduled discovery job calls `runJobDiscovery({ validateApplicationUrls: true })`. When no adapters are injected, discovery loads `backend/src/modules/jobs/sources/jobSourceConfig.ts`. Enabled entries become the existing Greenhouse, Lever, Ashby, or company career-page adapters. Disabled entries are skipped. A source that returns no jobs is still a success. If any configured source fails, or none are configured, discovery fails before it saves jobs and does not enqueue the daily report. That failure is retried. A missing candidate is not.
 
 The initial list is Groww and Razorpay on Greenhouse, CRED on Lever, and Linear on Ashby. These are public board identifiers, not secrets. Add another company by appending a config entry. A company career page also needs that company's JSON endpoint and parser. The worker file does not list companies. Discovery upserts job documents and does not create or reset Application records.
 
