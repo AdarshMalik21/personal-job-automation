@@ -71,6 +71,57 @@ describe("daily job report", () => {
     assert.equal(await store.findByDate("2026-10-07") !== null, true);
   });
 
+  it("refreshes the same day's selection without sending a second notification", async () => {
+    const store = new MemoryDailySelectionStore();
+    const { notifier, reports } = recordingNotifier();
+    const first = await publishDailyReport({
+      dateKey: "2026-10-07",
+      jobs: [job("skip", 90, "SKIP")],
+      store,
+      notifier,
+    });
+    const second = await publishDailyReport({
+      dateKey: "2026-10-07",
+      jobs: [job("review", 70, "REVIEW")],
+      store,
+      notifier,
+    });
+    const saved = await store.findByDate("2026-10-07");
+    assert.equal(first.sent, true);
+    assert.equal(first.report.jobs.length, 0);
+    assert.equal(second.duplicate, true);
+    assert.equal(second.sent, false);
+    assert.equal(second.report.jobs.length, 1);
+    assert.equal(second.report.jobs[0]?.jobId, "review");
+    assert.equal(saved?.notificationStatus, "sent");
+    assert.equal(saved?.jobs.length, 1);
+    assert.equal(saved?.jobs[0]?.jobId, "review");
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0]?.jobs.length, 0);
+  });
+
+  it("keeps a sent selection when a later discovery has no ranked jobs", async () => {
+    const store = new MemoryDailySelectionStore();
+    const { notifier, reports } = recordingNotifier();
+    await publishDailyReport({
+      dateKey: "2026-10-07",
+      jobs: [job("review", 70, "REVIEW")],
+      store,
+      notifier,
+    });
+    const second = await publishDailyReport({
+      dateKey: "2026-10-07",
+      jobs: [job("skip", 90, "SKIP")],
+      store,
+      notifier,
+    });
+    const saved = await store.findByDate("2026-10-07");
+    assert.equal(second.duplicate, true);
+    assert.equal(second.sent, false);
+    assert.equal(saved?.jobs[0]?.jobId, "review");
+    assert.equal(reports.length, 1);
+  });
+
   it("records a failed notification without marking the report delivered", async () => {
     const store = new MemoryDailySelectionStore();
     const notifier: NotificationProvider = {

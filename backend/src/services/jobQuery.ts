@@ -1,5 +1,6 @@
 import type { FilterQuery } from "mongoose";
 import type { JobDocument } from "../models/Job.js";
+import { activeReviewQueueFilter } from "../modules/jobs/reviewQueue.js";
 import { DEFAULT_FRESH_WITHIN_DAYS } from "../modules/jobs/services/freshness.js";
 
 export type JobListQuery = {
@@ -15,6 +16,7 @@ export type JobListQuery = {
   minScore?: number;
   maxScore?: number;
   applicationStatus?: string;
+  queue?: "review";
   sort: Record<string, 1 | -1>;
 };
 
@@ -77,6 +79,7 @@ export const parseJobListQuery = (
   const minScore = numberValue(input.minScore, "minScore");
   const maxScore = numberValue(input.maxScore, "maxScore");
   const applicationStatus = value(input.applicationStatus);
+  const queue = value(input.queue);
   const sortBy = value(input.sortBy) ?? "score";
   const sortOrder = value(input.sortOrder) === "asc" ? 1 : -1;
   if (decision && !decisions.has(decision))
@@ -87,6 +90,7 @@ export const parseJobListQuery = (
     throw new Error("freshness is invalid");
   if (applicationStatus && !applicationStatuses.has(applicationStatus))
     throw new Error("applicationStatus is invalid");
+  if (queue && queue !== "review") throw new Error("queue is invalid");
   const parsedDecision = decision as
     | Exclude<JobListQuery["decision"], undefined>
     | undefined;
@@ -110,6 +114,7 @@ export const parseJobListQuery = (
     ...(applicationStatus ? { applicationStatus } : {}),
     ...(minScore !== undefined ? { minScore } : {}),
     ...(maxScore !== undefined ? { maxScore } : {}),
+    ...(queue === "review" ? { queue: "review" as const } : {}),
     sort: Object.fromEntries(
       Object.entries(sortFields[sortBy]).map(([field, direction]) => [
         field,
@@ -159,6 +164,7 @@ export const buildJobFilter = (
 ): FilterQuery<JobDocument> => {
   const filter: FilterQuery<JobDocument> = {};
   const and: FilterQuery<JobDocument>[] = [];
+  if (query.queue === "review") and.push(activeReviewQueueFilter());
   if (query.decision) and.push({ "match.decision": query.decision });
   if (query.status) and.push({ status: query.status });
   if (query.reviewStatus) and.push({ reviewStatus: query.reviewStatus });

@@ -73,6 +73,22 @@ describe("job discovery worker", () => {
     assert.equal((await queue.get((await commands.list("queue:pending"))[0] ?? "")) , null);
   });
 
+  it("uses the same candidate-loading discovery call for scheduled and manual jobs", async () => {
+    const calls: Array<{ validateApplicationUrls: boolean }> = [];
+    const discover = async (dependencies: { validateApplicationUrls: boolean }) => {
+      calls.push(dependencies);
+    };
+    await runScheduledJobDiscovery(discover);
+    const commands = new MemoryQueueCommands();
+    const queue = new JobQueue(commands);
+    await queue.enqueue(JOB_DISCOVERY, { scheduledFor: "2026-10-08", trigger: "manual" });
+    const outcome = await processNextJob(queue, discoveryHandlers(() => runScheduledJobDiscovery(discover)));
+    assert.equal(outcome, "completed");
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[0], { validateApplicationUrls: true });
+    assert.deepEqual(calls[1], { validateApplicationUrls: true });
+  });
+
   it("requests application URL validation from the scheduled discovery handler", async () => {
     const received: boolean[] = [];
     const record = async (dependencies: { validateApplicationUrls: boolean }) => {

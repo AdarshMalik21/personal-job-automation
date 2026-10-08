@@ -30,6 +30,7 @@ export type StoredDailySelection = {
 export type DailySelectionStore = {
   findByDate(dateKey: string): Promise<StoredDailySelection | null>;
   insert(selection: StoredDailySelection): Promise<StoredDailySelection>;
+  replaceJobs(dateKey: string, jobs: DailyReportJob[]): Promise<void>;
   updateStatus(dateKey: string, status: "sent" | "failed", error?: string): Promise<void>;
 };
 
@@ -168,6 +169,10 @@ export class MongooseDailySelectionStore implements DailySelectionStore {
     }
   }
 
+  async replaceJobs(dateKey: string, jobs: DailyReportJob[]): Promise<void> {
+    await DailySelectionModel.updateOne({ dateKey }, { $set: { jobs } });
+  }
+
   async updateStatus(dateKey: string, status: "sent" | "failed", error?: string): Promise<void> {
     await DailySelectionModel.updateOne(
       { dateKey },
@@ -196,6 +201,12 @@ export class MemoryDailySelectionStore implements DailySelectionStore {
     return selection;
   }
 
+  async replaceJobs(dateKey: string, jobs: DailyReportJob[]): Promise<void> {
+    const existing = this.rows.get(dateKey);
+    if (!existing) return;
+    existing.jobs = jobs;
+  }
+
   async updateStatus(dateKey: string, status: "sent" | "failed", error?: string): Promise<void> {
     const existing = this.rows.get(dateKey);
     if (!existing) return;
@@ -212,19 +223,19 @@ export const publishDailyReport = async (input: {
   notifier: NotificationProvider;
 }): Promise<{ report: DailyJobReport; sent: boolean; duplicate: boolean }> => {
   const existing = await input.store.findByDate(input.dateKey);
-  if (existing?.notificationStatus === "sent") {
-    return { report: toDailyReport(input.dateKey, existing.jobs), sent: false, duplicate: true };
-  }
-  const selected = existing?.jobs ?? rankDailyJobs(input.jobs).map((job, index) => reportJob(job, index + 1));
+  const ranked = rankDailyJobs(input.jobs).map((job, index) => reportJob(job, index + 1));
   const selection = existing ?? await input.store.insert({
     dateKey: input.dateKey,
-    jobs: selected,
+    jobs: ranked,
     notificationStatus: "pending",
   });
   if (selection.notificationStatus === "sent") {
-    return { report: toDailyReport(input.dateKey, selection.jobs), sent: false, duplicate: true };
+    const jobs = ranked.length > 0 || selection.jobs.length === 0 ? ranked : selection.jobs;
+    if (jobs !== selection.jobs) await input.store.replaceJobs(input.dateKey, jobs);
+    return { report: toDailyReport(input.dateKey, jobs), sent: false, duplicate: true };
   }
-  const report = toDailyReport(input.dateKey, selection.jobs);
+  await input.store.replaceJobs(input.dateKey, ranked);
+  const report = toDailyReport(input.dateKey, ranked);
   try {
     await input.notifier.sendDailyJobReport(report);
     await input.store.updateStatus(input.dateKey, "sent");

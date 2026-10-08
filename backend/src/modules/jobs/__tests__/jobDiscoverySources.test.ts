@@ -143,6 +143,30 @@ describe("configured job discovery", () => {
     assert.equal(urlChecks, 0);
   });
 
+  it("reports a missing active candidate instead of inventing match decisions", async () => {
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map((value) => String(value)).join(" "));
+    };
+    try {
+      const result = await runJobDiscovery({
+        adapters: createJobSourceAdapters([
+          { id: "greenhouse", enabled: true, type: "greenhouse", boardToken: "acme", companyName: "Acme" },
+        ], {
+          fetcher: async () => response({ jobs: [greenhouseJob] }),
+        }),
+        repository: { upsert: async () => undefined },
+        candidate: null,
+      });
+      assert.equal(result.candidateLoaded, false);
+      assert.equal(result.persisted, 1);
+      assert.equal(warnings.some((line) => line.includes("no active candidate profile") && line.includes("unmatched=1")), true);
+    } finally {
+      console.warn = original;
+    }
+  });
+
   it("does not write application or submission records", () => {
     const source = readFileSync(new URL("../services/jobDiscovery.ts", import.meta.url), "utf8");
     assert.equal(source.includes("ApplicationModel"), false);

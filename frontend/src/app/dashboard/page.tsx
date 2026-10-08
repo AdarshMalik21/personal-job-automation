@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [token, setToken] = useState<string>();
   const [jobs, setJobs] = useState<DashboardJob[]>([]);
+  const [reviewQueue, setReviewQueue] = useState<DashboardJob[]>([]);
   const [stats, setStats] = useState<JobStats>();
   const [analytics, setAnalytics] = useState<ApplicationAnalytics>();
   const [daily, setDaily] = useState<DailySelection>();
@@ -88,10 +89,17 @@ export default function DashboardPage() {
       if (value !== undefined && value !== "" && key !== "page" && key !== "limit") params.set(key, String(value));
     });
     window.history.replaceState(null, "", `${window.location.pathname}${params.toString() ? `?${params}` : ""}`);
-    Promise.all([getJobs(token, query), getJobStats(token), getApplicationAnalytics(token), getDailySelection(token)])
-      .then(([jobsResult, statsResult, analyticsResult, dailyResult]) => {
-        if (!jobsResult.data || !statsResult.data || !analyticsResult.data || !dailyResult.data) throw new Error("Dashboard response was incomplete");
+    Promise.all([
+      getJobs(token, query),
+      getJobs(token, { queue: "review", limit: 50, page: 1, sortBy: "score" }),
+      getJobStats(token),
+      getApplicationAnalytics(token),
+      getDailySelection(token),
+    ])
+      .then(([jobsResult, reviewResult, statsResult, analyticsResult, dailyResult]) => {
+        if (!jobsResult.data || !reviewResult.data || !statsResult.data || !analyticsResult.data || !dailyResult.data) throw new Error("Dashboard response was incomplete");
         setJobs(jobsResult.data.jobs);
+        setReviewQueue(reviewResult.data.jobs);
         setPagination(jobsResult.data.pagination);
         setStats(statsResult.data);
         setAnalytics(analyticsResult.data.analytics);
@@ -123,14 +131,15 @@ export default function DashboardPage() {
     }
   };
 
-  const review = async (job: DashboardJob, action: "review" | "skip") => {
+  const updateUserReview = async (job: DashboardJob, action: "reviewed" | "skip") => {
     if (!token) return;
-    const result = action === "review"
+    const result = action === "reviewed"
       ? await markJobReviewed(token, job.id)
       : await skipJob(token, job.id);
-    if (result.data) {
-      setJobs((current) => current.map((item) => item.id === job.id ? result.data!.job : item));
-    }
+    if (!result.data) return;
+    const updated = result.data.job;
+    setJobs((current) => current.map((item) => item.id === job.id ? updated : item));
+    setReviewQueue((current) => current.filter((item) => item.id !== job.id));
   };
 
   const signOut = () => {
@@ -235,6 +244,47 @@ export default function DashboardPage() {
           <p className="rate-note">Rates use successfully submitted applications as the denominator.</p>
         </div>
       </section>
+      <section className="jobs-panel" aria-label="Review queue">
+        <div className="section-heading">
+          <h2>Review Queue</h2>
+          <p>{reviewQueue.length === 1 ? "1 job needs your attention" : `${reviewQueue.length} jobs need your attention`}</p>
+        </div>
+        {reviewQueue.length === 0 ? (
+          <div className="empty-state">
+            <strong>No jobs are waiting for review.</strong>
+            <span>Jobs the matcher marks REVIEW stay here until you mark them reviewed or skip them.</span>
+          </div>
+        ) : (
+          <div className="daily-list">
+            {reviewQueue.map((job) => {
+              const reasons = job.match.reasons ?? [];
+              const exact = job.match.skillAnalysis?.exact ?? [];
+              const missing = job.match.skillAnalysis?.missingRequired ?? [];
+              return (
+                <article className="daily-row review-queue-row" key={job.id}>
+                  <div>
+                    <h3><Link href={`/jobs/${job.id}`}>{job.title}</Link></h3>
+                    <p>{job.company} · {job.location ?? "Location unknown"} · {job.remoteStatus ?? "Work mode unknown"}</p>
+                    <p>{reasons[0] ?? "The matcher marked this job for review."}</p>
+                    <p>{job.match.experienceAnalysis?.reason ?? "Experience was not analyzed."}</p>
+                    {(exact.length > 0 || missing.length > 0) && (
+                      <p>{[exact.slice(0, 3).join(", "), missing.length > 0 ? `Missing ${missing.slice(0, 2).join(", ")}` : ""].filter(Boolean).join(" · ")}</p>
+                    )}
+                  </div>
+                  <div className="job-row-score"><strong>{scoreOf(job)}</strong><span>/100</span></div>
+                  <span className="decision-badge review">REVIEW</span>
+                  <div className="job-row-actions">
+                    <Link className="text-button" href={`/jobs/${job.id}`}>View Job</Link>
+                    <Link className="text-button" href={`/jobs/${job.id}/review`}>Review Job</Link>
+                    <button className="text-button" type="button" onClick={() => updateUserReview(job, "reviewed")}>Mark reviewed</button>
+                    <button className="text-button muted-action" type="button" onClick={() => updateUserReview(job, "skip")}>Skip</button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
       <section className="jobs-panel" aria-label="Today's best matches">
         <div className="section-heading">
           <h2>Today&apos;s Best Matches</h2>
@@ -315,7 +365,7 @@ export default function DashboardPage() {
               <span>Application</span>
               <span />
             </div>
-            {jobs.map((job) => <JobCard key={job.id} job={job} onReview={review} />)}
+            {jobs.map((job) => <JobCard key={job.id} job={job} onReview={updateUserReview} />)}
           </div>
         )}
         <Pagination page={pagination.page} totalPages={pagination.totalPages} onChange={(page) => setFilters((current) => ({ ...current, page }))} />
@@ -334,7 +384,7 @@ const sortLabels: Record<string, string> = {
 function percent(rate: number | undefined) { return `${Math.round((rate ?? 0) * 100)}%`; }
 function Metric({ label, value, tone }: { label: string; value: number; tone?: string }) { return <article className={`stat-card ${tone ?? ""}`}><span>{label}</span><strong>{value}</strong></article>; }
 function Filter({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[][] }) { return <label className="filter-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([option, text]) => <option key={option || "all"} value={option}>{text}</option>)}</select></label>; }
-function JobCard({ job, onReview }: { job: DashboardJob; onReview: (job: DashboardJob, action: "review" | "skip") => Promise<void> }) {
+function JobCard({ job, onReview }: { job: DashboardJob; onReview: (job: DashboardJob, action: "reviewed" | "skip") => Promise<void> }) {
   const decision = decisionOf(job);
   const freshness = job.freshness?.status ?? "unknown";
   const reviewLabel = job.reviewStatus === "reviewed" ? "Reviewed" : job.reviewStatus === "skipped" ? "Skipped manually" : "Not reviewed";
@@ -368,10 +418,11 @@ function JobCard({ job, onReview }: { job: DashboardJob; onReview: (job: Dashboa
         <small>{reviewLabel}{trackingNotes ? ` · ${trackingNotes}` : ""}</small>
       </div>
       <div className="job-row-actions">
-        <Link className="text-button" href={`/jobs/${job.id}`}>View details</Link>
+        <Link className="text-button" href={`/jobs/${job.id}`}>View Job</Link>
+        <Link className="text-button" href={`/jobs/${job.id}/review`}>Review Job</Link>
         {job.officialApplicationUrl && <a className="text-button" href={job.officialApplicationUrl} target="_blank" rel="noreferrer">Open application</a>}
-        <button className="text-button" onClick={() => onReview(job, "review")}>Review</button>
-        <button className="text-button muted-action" onClick={() => onReview(job, "skip")}>Skip</button>
+        <button className="text-button" type="button" onClick={() => onReview(job, "reviewed")}>Mark reviewed</button>
+        <button className="text-button muted-action" type="button" onClick={() => onReview(job, "skip")}>Skip</button>
       </div>
     </article>
   );

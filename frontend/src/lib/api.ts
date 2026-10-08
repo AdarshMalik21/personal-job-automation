@@ -110,6 +110,7 @@ export type JobListParams = {
   reviewStatus?: string;
   applicationStatus?: string;
   sortBy?: string;
+  queue?: "review";
 };
 
 const withToken = (token: string): RequestInit => ({

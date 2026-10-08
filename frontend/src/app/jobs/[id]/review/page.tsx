@@ -7,6 +7,7 @@ import {
   ApplicationReview,
   cancelReviewedApplication,
   getApplicationReview,
+  prepareApplication,
   stopBrowserRun,
   submitReviewedApplication,
   updateReviewField,
@@ -44,6 +45,33 @@ export default function ApplicationReviewPage() {
     });
   }, [load, router]);
 
+  const prepareForReview = async () => {
+    const storedToken = token ?? localStorage.getItem(tokenKey);
+    if (!storedToken) return;
+    setBusy(true);
+    setError("");
+    try {
+      await prepareApplication(storedToken, params.id);
+      await load(storedToken);
+    } catch (requestError: unknown) {
+      setError(requestError instanceof Error ? requestError.message : "Preparation failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (error && /preparation/i.test(error)) {
+    return (
+      <main className="loading-shell">
+        <div>
+          <p className="form-error">{error}</p>
+          <p>Prepare the application before reviewing its fields. Nothing is submitted.</p>
+          <button className="primary-button" type="button" disabled={busy} onClick={prepareForReview}>Prepare application</button>
+          <Link className="text-button" href={`/jobs/${params.id}`}>View Job</Link>
+        </div>
+      </main>
+    );
+  }
   if (error) return <main className="loading-shell"><p className="form-error">{error}</p></main>;
   if (!review || !token) return <main className="loading-shell">Loading application review...</main>;
 

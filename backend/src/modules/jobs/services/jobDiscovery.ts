@@ -120,8 +120,14 @@ export const runJobDiscovery = async (dependencies: DiscoveryDependencies = {}) 
   console.info(
     `Job discovery persisted=${jobs.length} apply=${decisions.APPLY} review=${decisions.REVIEW} skip=${decisions.SKIP} unmatched=${decisions.unmatched}`,
   );
+  if (!candidate) {
+    console.warn(
+      `Job discovery found no active candidate profile. persisted=${jobs.length} unmatched=${decisions.unmatched}`,
+    );
+  }
   return {
     persisted: jobs.length,
+    candidateLoaded: candidate !== null,
     sources: result.sources,
     stats: result.stats,
   };

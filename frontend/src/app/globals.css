@@ -440,6 +440,9 @@ button {
 .daily-missing {
   color: #8a4b12;
 }
+.review-queue-row {
+  grid-template-columns: minmax(0, 1.6fr) 4.5rem 5.5rem auto;
+}
 .section-heading p,
 .jobs-context {
   margin: 0;
@@ -944,6 +947,9 @@ button {
   }
   .daily-row {
     grid-template-columns: 2rem 1fr auto;
+  }
+  .review-queue-row {
+    grid-template-columns: 1fr auto;
   }
   .daily-row .job-row-actions {
     grid-column: 1 / -1;
