@@ -163,6 +163,17 @@ export const getDashboardSummary = (token: string) =>
     headers: { Authorization: `Bearer ${token}` },
   });
 
+export type DiscoveryRun = {
+  status: "queued" | "already_running" | "processing" | "retry" | "completed" | "failed";
+  jobId?: string;
+};
+
+export const startDiscovery = (token: string) =>
+  request<DiscoveryRun>("/jobs/discovery/run", { ...withToken(token), method: "POST" });
+
+export const getDiscoveryRun = (token: string, jobId: string) =>
+  request<DiscoveryRun>(`/jobs/discovery/runs/${encodeURIComponent(jobId)}`, withToken(token));
+
 export const getJobStats = (token: string) =>
   request<JobStats>("/jobs/stats", withToken(token));
 

@@ -10,8 +10,8 @@ export const createRedisCommands = (redis: RedisQueueClient): QueueCommands => (
   async set(key, value) {
     await redis.set(key, value);
   },
-  async setNx(key, value) {
-    const result = await redis.set(key, value, { NX: true });
+  async setNx(key, value, ttlSeconds) {
+    const result = await redis.set(key, value, ttlSeconds ? { NX: true, EX: ttlSeconds } : { NX: true });
     return result === "OK";
   },
   async get(key) {

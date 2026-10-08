@@ -16,7 +16,7 @@ export type QueueJob = {
 
 export type QueueCommands = {
   set(key: string, value: string): Promise<void>;
-  setNx(key: string, value: string): Promise<boolean>;
+  setNx(key: string, value: string, ttlSeconds?: number): Promise<boolean>;
   get(key: string): Promise<string | null>;
   del(key: string): Promise<void>;
   push(key: string, value: string): Promise<void>;

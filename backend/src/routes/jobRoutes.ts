@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { discoveryHandlers } from "../controllers/jobDiscoveryController.js";
 import {
   getJob,
   listJobs,
@@ -10,6 +11,8 @@ import { requireAuth } from "../middleware/auth.js";
 
 export const jobRoutes = Router();
 jobRoutes.use(requireAuth);
+jobRoutes.post("/discovery/run", discoveryHandlers.run);
+jobRoutes.get("/discovery/runs/:jobId", discoveryHandlers.status);
 jobRoutes.get("/stats", stats);
 jobRoutes.get("/", listJobs);
 jobRoutes.get("/:id", getJob);

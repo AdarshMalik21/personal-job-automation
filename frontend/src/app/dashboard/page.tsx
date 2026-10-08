@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ApplicationAnalytics,
   DashboardJob,
@@ -12,11 +12,13 @@ import {
   DailySelection,
   getApplicationAnalytics,
   getDailySelection,
+  getDiscoveryRun,
   getJobStats,
   getJobs,
   markJobReviewed,
   prepareApplication,
   skipJob,
+  startDiscovery,
 } from "../../lib/api";
 
 const tokenKey = "job-automation-token";
@@ -47,6 +49,14 @@ export default function DashboardPage() {
   const [filters, setFilters] = useState<JobListParams>(initialFilters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [discoveryBusy, setDiscoveryBusy] = useState(false);
+  const [discoveryMessage, setDiscoveryMessage] = useState("");
+  const [discoveryError, setDiscoveryError] = useState("");
+  const discoveryGeneration = useRef(0);
+
+  useEffect(() => () => {
+    discoveryGeneration.current += 1;
+  }, []);
 
   useEffect(() => {
     const storedToken = localStorage.getItem(tokenKey);
@@ -124,8 +134,47 @@ export default function DashboardPage() {
   };
 
   const signOut = () => {
+    discoveryGeneration.current += 1;
     localStorage.removeItem(tokenKey);
     router.replace("/login");
+  };
+
+  const runDiscovery = async () => {
+    if (!token || discoveryBusy) return;
+    const generation = discoveryGeneration.current + 1;
+    discoveryGeneration.current = generation;
+    setDiscoveryBusy(true);
+    setDiscoveryMessage("");
+    setDiscoveryError("");
+    try {
+      const started = await startDiscovery(token);
+      if (generation !== discoveryGeneration.current) return;
+      const jobId = started.data?.jobId;
+      setDiscoveryMessage(started.data?.status === "already_running" ? "Discovery is already running" : "Discovery started");
+      if (!jobId) return;
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        if (generation !== discoveryGeneration.current) return;
+        const current = await getDiscoveryRun(token, jobId);
+        const status = current.data?.status;
+        if (status === "completed") {
+          setDiscoveryMessage("Discovery completed");
+          setFilters((filtersNow) => ({ ...filtersNow }));
+          return;
+        }
+        if (status === "failed") {
+          setDiscoveryMessage("");
+          setDiscoveryError("Discovery failed");
+          return;
+        }
+      }
+      setDiscoveryMessage("Discovery is still running. The dashboard will show new jobs after the worker finishes.");
+    } catch (requestError: unknown) {
+      if (generation !== discoveryGeneration.current) return;
+      setDiscoveryError(requestError instanceof Error ? requestError.message : "Discovery could not be started");
+    } finally {
+      if (generation === discoveryGeneration.current) setDiscoveryBusy(false);
+    }
   };
 
   if (error) return <main className="loading-shell"><div><p className="form-error">{error}</p><button className="primary-button" onClick={() => setFilters((current) => ({ ...current }))}>Try again</button></div></main>;
@@ -189,8 +238,15 @@ export default function DashboardPage() {
       <section className="jobs-panel" aria-label="Today's best matches">
         <div className="section-heading">
           <h2>Today&apos;s Best Matches</h2>
-          <p>{daily ? `${daily.dateKey} · ${daily.jobs.length} selected` : "Loading today's selection"}</p>
+          <div className="header-actions">
+            <p>{daily ? `${daily.dateKey} · ${daily.jobs.length} selected` : "Loading today's selection"}</p>
+            <button className="primary-button" type="button" disabled={!token || discoveryBusy} aria-busy={discoveryBusy} onClick={runDiscovery}>
+              {discoveryBusy ? "Running discovery" : "Run Discovery"}
+            </button>
+          </div>
         </div>
+        {discoveryError && <p className="form-error">{discoveryError}</p>}
+        {discoveryMessage && <p className="discovery-note">{discoveryMessage}</p>}
         {dailyMessage && <p className="form-error">{dailyMessage}</p>}
         {!daily || daily.jobs.length === 0 ? (
           <div className="empty-state">

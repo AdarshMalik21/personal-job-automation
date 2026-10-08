@@ -82,6 +82,19 @@ export class JobQueue {
     }
   }
 
+  async activeId(type: string): Promise<string | undefined> {
+    const ids = new Set([
+      ...await this.commands.list(PENDING),
+      ...await this.commands.list(PROCESSING),
+      ...await this.commands.due(DELAYED, Number.MAX_SAFE_INTEGER),
+    ]);
+    for (const id of ids) {
+      const job = await this.get(id);
+      if (job?.type === type) return job.id;
+    }
+    return undefined;
+  }
+
   async get(id: string): Promise<QueueJob | null> {
     const raw = await this.commands.get(jobKey(id));
     return raw ? parseJob(raw) : null;

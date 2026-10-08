@@ -11,7 +11,7 @@ export class MemoryQueueCommands implements QueueCommands {
     this.values.set(key, value);
   }
 
-  async setNx(key: string, value: string): Promise<boolean> {
+  async setNx(key: string, value: string, _ttlSeconds?: number): Promise<boolean> {
     if (this.values.has(key)) return false;
     this.values.set(key, value);
     return true;
