@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { readEnv } from "../envConfig.js";
+import { readFileSync } from "node:fs";
+import { mongoDatabaseName, readEnv } from "../envConfig.js";
 import { redactSecrets } from "../redact.js";
 import { shutdownRuntime } from "../shutdown.js";
 import { buildHealthReport, buildSystemHealthReport } from "../../controllers/healthStatus.js";
@@ -46,6 +47,13 @@ describe("production configuration", () => {
       () => readEnv({ ...productionEnv, MONGODB_URI: "mongodb+srv://user:secret@cluster.example.net/?retryWrites=true" }),
       /database name/,
     );
+    assert.equal(mongoDatabaseName(config.mongodbUri), "personal_job_automation");
+    const server = readFileSync(new URL("../../server.ts", import.meta.url), "utf8");
+    const worker = readFileSync(new URL("../../worker.ts", import.meta.url), "utf8");
+    assert.equal(server.includes("connectDatabase"), true);
+    assert.equal(worker.includes("connectDatabase"), true);
+    assert.equal(server.includes("mongoose.connect"), false);
+    assert.equal(worker.includes("mongoose.connect"), false);
   });
 
   it("removes database and redis connection strings from log text", () => {

@@ -1,6 +1,6 @@
 import { errorText } from "../config/redact.js";
 import { dailyReportKey } from "../modules/jobs/ranking/dailyReport.js";
-import { runJobDiscovery } from "../modules/jobs/services/jobDiscovery.js";
+import { PermanentDiscoveryError, runJobDiscovery } from "../modules/jobs/services/jobDiscovery.js";
 import { JobQueue } from "../queue/jobQueue.js";
 import { DAILY_REPORT, JOB_DISCOVERY, type QueueJob } from "../queue/types.js";
 import { kolkataParts, tickDiscoverySchedule } from "../scheduler/discoverySchedule.js";
@@ -72,7 +72,8 @@ export const processNextJob = async (
     return "completed";
   } catch (error) {
     const reason = errorText(error);
-    const outcome = await queue.fail(job.id, reason);
+    const permanent = error instanceof PermanentDiscoveryError || (typeof error === "object" && error !== null && "permanent" in error && error.permanent === true);
+    const outcome = permanent ? await queue.failPermanently(job.id, reason) : await queue.fail(job.id, reason);
     console.info(`Job ${outcome} id=${job.id} type=${job.type} attempts=${job.attempts}`);
     return outcome;
   }

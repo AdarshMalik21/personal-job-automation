@@ -8,6 +8,7 @@ import type { RawJobInput } from "../../modules/jobs/types/rawJob.js";
 import { JobQueue } from "../../queue/jobQueue.js";
 import { MemoryQueueCommands } from "../../queue/memoryQueue.js";
 import { DAILY_REPORT, JOB_DISCOVERY } from "../../queue/types.js";
+import { PermanentDiscoveryError } from "../../modules/jobs/services/jobDiscovery.js";
 import { discoveryHandlers, processNextJob, runScheduledJobDiscovery, runWorkerLoop, scheduleDailyReport } from "../workerRuntime.js";
 
 const rawJob = (): RawJobInput => ({
@@ -87,6 +88,48 @@ describe("job discovery worker", () => {
     assert.equal(calls.length, 2);
     assert.deepEqual(calls[0], { validateApplicationUrls: true });
     assert.deepEqual(calls[1], { validateApplicationUrls: true });
+  });
+
+  it("does not publish an empty daily report when candidate matching fails", async () => {
+    const commands = new MemoryQueueCommands();
+    const queue = new JobQueue(commands);
+    let reports = 0;
+    const handlers = discoveryHandlers(async () => {
+      throw new PermanentDiscoveryError("Job discovery requires a usable active candidate. Missing: active candidate profile");
+    }, {
+      reserve: (key) => commands.setNx(key, "1"),
+      release: (key) => commands.del(key),
+      enqueue: async (payload) => {
+        reports += 1;
+        return queue.enqueue(DAILY_REPORT, payload);
+      },
+    });
+    await queue.enqueue(JOB_DISCOVERY, { scheduledFor: "2026-10-08" });
+    const outcome = await processNextJob(queue, handlers);
+    assert.equal(outcome, "failed");
+    assert.equal(reports, 0);
+    const failed = await commands.list("queue:failed");
+    assert.equal(failed.length, 1);
+    assert.equal((await queue.get(failed[0] ?? ""))?.status, "failed");
+  });
+
+  it("retries a transient database failure and keeps a candidate failure from retrying", async () => {
+    const commands = new MemoryQueueCommands();
+    const queue = new JobQueue(commands);
+    await queue.enqueue(JOB_DISCOVERY, { scheduledFor: "2026-10-08" });
+    const retry = await processNextJob(queue, discoveryHandlers(async () => {
+      throw new Error("MongoDB connection failed");
+    }));
+    assert.equal(retry, "retry");
+    const permanent = new MemoryQueueCommands();
+    const permanentQueue = new JobQueue(permanent);
+    await permanentQueue.enqueue(JOB_DISCOVERY, { scheduledFor: "2026-10-08" });
+    const failed = await processNextJob(permanentQueue, discoveryHandlers(async () => {
+      throw new PermanentDiscoveryError("Job discovery requires a usable active candidate. Missing: skills");
+    }));
+    assert.equal(failed, "failed");
+    assert.equal((await permanent.list("queue:pending")).length, 0);
+    assert.deepEqual(await permanent.due("queue:delayed", Number.MAX_SAFE_INTEGER), []);
   });
 
   it("requests application URL validation from the scheduled discovery handler", async () => {

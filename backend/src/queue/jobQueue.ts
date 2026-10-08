@@ -49,6 +49,16 @@ export class JobQueue {
     await this.commands.remove(PROCESSING, id);
   }
 
+  async failPermanently(id: string, reason: string): Promise<"failed"> {
+    const job = await this.read(id);
+    job.lastError = reason;
+    job.status = "failed";
+    await this.save(job);
+    await this.commands.remove(PROCESSING, id);
+    await this.commands.push(FAILED, id);
+    return "failed";
+  }
+
   async fail(id: string, reason: string): Promise<"retry" | "failed"> {
     const job = await this.read(id);
     job.lastError = reason;

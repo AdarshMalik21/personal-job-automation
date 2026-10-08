@@ -16,8 +16,30 @@ export type DiscoveryDependencies = {
   urlFetcher?: UrlFetcher;
 };
 
+export class PermanentDiscoveryError extends Error {
+  readonly permanent = true;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PermanentDiscoveryError";
+  }
+}
+
+export const candidateMatchingGaps = (candidate: CandidateProfile | null): string[] => {
+  if (!candidate?.isActive) return ["active candidate profile"];
+  const gaps: string[] = [];
+  if (typeof candidate.yearsOfExperience !== "number" || !Number.isFinite(candidate.yearsOfExperience)) {
+    gaps.push("years of experience");
+  }
+  const skills = [...candidate.skills, ...candidate.technologies].filter((skill) => skill.trim().length > 0);
+  if (skills.length === 0) gaps.push("skills");
+  const locations = candidate.preferredLocations.filter((location) => location.trim().length > 0);
+  if (locations.length === 0) gaps.push("preferred locations");
+  return gaps;
+};
+
 export const loadActiveCandidate = async (): Promise<CandidateProfile | null> => {
-  const profile = await CandidateProfileModel.findOne({ isActive: true }).lean();
+  const profile = await CandidateProfileModel.findOne({ isActive: true }).sort({ updatedAt: -1 }).lean();
   if (!profile) return null;
   const text = (value: unknown): string | undefined => typeof value === "string" && value.trim() ? value : undefined;
   const sourcePersonal = profile.personal ?? {};
@@ -64,8 +86,17 @@ const countUrlStatus = (jobs: Array<{ urlValidation: { status: string } }>, stat
   jobs.filter((job) => job.urlValidation.status === status).length;
 
 export const runJobDiscovery = async (dependencies: DiscoveryDependencies = {}) => {
+  const candidate = dependencies.candidate !== undefined
+    ? dependencies.candidate
+    : await (dependencies.loadCandidate ?? loadActiveCandidate)();
+  const gaps = candidateMatchingGaps(candidate);
+  if (gaps.length > 0 || !candidate) {
+    const reason = gaps.length > 0 ? gaps.join(", ") : "active candidate profile";
+    console.warn(`Job discovery status=failed candidateLoaded=false missing=${reason}`);
+    throw new PermanentDiscoveryError(`Job discovery requires a usable active candidate. Missing: ${reason}`);
+  }
   const adapters = dependencies.adapters ?? createJobSourceAdapters();
-  console.info(`Job discovery started sources=${adapters.length}`);
+  console.info(`Job discovery started sources=${adapters.length} candidateLoaded=true`);
   const result = await new JobSourceOrchestrator(adapters).ingest({
     validateApplicationUrls: dependencies.validateApplicationUrls ?? false,
     ...(dependencies.urlFetcher ? { urlFetcher: dependencies.urlFetcher } : {}),
@@ -83,51 +114,50 @@ export const runJobDiscovery = async (dependencies: DiscoveryDependencies = {}) 
   if (adapters.length > 0 && result.sources.length > 0 && failed === result.sources.length) {
     throw new Error("Job discovery failed for every configured source");
   }
-  const candidate = dependencies.candidate !== undefined
-    ? dependencies.candidate
-    : await (dependencies.loadCandidate ?? loadActiveCandidate)();
   const jobs: Job[] = result.jobs.map((item) => {
-    const match = candidate ? matchCandidateToJob(candidate, item.job) : undefined;
+    const match = matchCandidateToJob(candidate, item.job);
     return {
       ...item.job,
       match: {
-        ...(match
-          ? {
-              score: match.matchScore,
-              matchScore: match.matchScore,
-              decision: match.decision,
-              confidence: match.confidence,
-              reasons: match.reasons,
-              hardFilterFailures: match.hardFilterFailures,
-              scoreBreakdown: match.scoreBreakdown,
-              roleAnalysis: match.roleAnalysis,
-              experienceAnalysis: match.experienceAnalysis,
-              locationAnalysis: match.locationAnalysis,
-              skillAnalysis: match.skillAnalysis,
-            }
-          : {}),
+        score: match.matchScore,
+        matchScore: match.matchScore,
+        decision: match.decision,
+        confidence: match.confidence,
+        reasons: match.reasons,
+        hardFilterFailures: match.hardFilterFailures,
+        scoreBreakdown: match.scoreBreakdown,
+        roleAnalysis: match.roleAnalysis,
+        experienceAnalysis: match.experienceAnalysis,
+        locationAnalysis: match.locationAnalysis,
+        skillAnalysis: match.skillAnalysis,
         openStatus: item.openStatus,
       },
     };
   });
-  await persistJobs(jobs, dependencies.repository);
   const decisions = { APPLY: 0, REVIEW: 0, SKIP: 0, unmatched: 0 };
   for (const job of jobs) {
     const decision = job.match?.decision;
     if (decision === "APPLY" || decision === "REVIEW" || decision === "SKIP") decisions[decision] += 1;
     else decisions.unmatched += 1;
   }
-  console.info(
-    `Job discovery persisted=${jobs.length} apply=${decisions.APPLY} review=${decisions.REVIEW} skip=${decisions.SKIP} unmatched=${decisions.unmatched}`,
-  );
-  if (!candidate) {
-    console.warn(
-      `Job discovery found no active candidate profile. persisted=${jobs.length} unmatched=${decisions.unmatched}`,
-    );
+  const matched = decisions.APPLY + decisions.REVIEW + decisions.SKIP;
+  if (decisions.unmatched > 0 || matched !== jobs.length) {
+    console.warn(`Job discovery status=failed candidateLoaded=true persisted=0 unmatched=${decisions.unmatched}`);
+    throw new PermanentDiscoveryError("Job discovery matched without a decision for every job");
   }
+  await persistJobs(jobs, dependencies.repository);
+  console.info(
+    `Job discovery status=succeeded candidateLoaded=true persisted=${jobs.length} matched=${matched} apply=${decisions.APPLY} review=${decisions.REVIEW} skip=${decisions.SKIP} unmatched=${decisions.unmatched}`,
+  );
   return {
+    status: "succeeded" as const,
     persisted: jobs.length,
-    candidateLoaded: candidate !== null,
+    candidateLoaded: true,
+    matched,
+    apply: decisions.APPLY,
+    review: decisions.REVIEW,
+    skip: decisions.SKIP,
+    unmatched: decisions.unmatched,
     sources: result.sources,
     stats: result.stats,
   };

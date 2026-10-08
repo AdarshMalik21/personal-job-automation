@@ -118,7 +118,7 @@ Set `NEXT_PUBLIC_API_URL` in the environment before `npm run build --workspace f
 
 ### MongoDB Atlas
 
-Create a database user and set `MONGODB_URI` to that user's connection string. The path must include the database name, for example `mongodb+srv://<user>:<password>@<cluster>/test?retryWrites=true&w=majority`. The jobs already stored for this project are in the Atlas database named `test`. Use that name so production reads the same data. Production startup rejects a URI that omits the database name instead of silently selecting a default. Allow the EC2 instance's outbound IP in Atlas Network Access. The API logs connection success or failure and does not log the connection string.
+Create a database user and set `MONGODB_URI` to that user's connection string. The path must include the database name, for example `mongodb+srv://<user>:<password>@<cluster>/test?retryWrites=true&w=majority`. The jobs already stored for this project are in the Atlas database named `test`. Use that name so production reads the same data. Production startup rejects a URI that omits the database name instead of silently selecting a default. The API and the worker must use the same `MONGODB_URI`. Both log `MongoDB connected database=<name>` and do not log the connection string. Allow the EC2 instance's outbound IP in Atlas Network Access.
 
 ### Redis
 
@@ -154,7 +154,9 @@ Neither response includes credentials, connection strings, or candidate data.
 
 ## Background worker
 
-The API and the worker are separate processes. The API serves the dashboard and does not schedule discovery. The worker connects to the same MongoDB database and the same Upstash Redis instance, then runs the scheduler and the queue consumer.
+The API and the worker are separate processes. The API serves the dashboard and does not schedule discovery. Start both with the same environment. `MONGODB_URI` and `REDIS_URL` must be identical, and `MONGODB_URI` must name the database. The worker connects to that MongoDB database and the same Upstash Redis instance, then runs the scheduler and the queue consumer.
+
+Scheduled and manual discovery both enqueue `JOB_DISCOVERY`. The worker runs one discovery service. That service loads the active candidate before it fetches jobs. Discovery fails, and does not save an unmatched result or enqueue the daily report, when no active profile exists or the profile has no years of experience, skills, or preferred locations. A missing candidate is not retried. A temporary MongoDB or source failure uses the existing queue retry. After a successful match, the worker enqueues one daily report.
 
 Start them from the repository root:
 
@@ -180,7 +182,7 @@ The idempotency key is `job-discovery:YYYY-MM-DD:Asia/Kolkata`. Redis stores tha
 
 ### Queue
 
-Pending, processing, retry, and failed job state stays in Redis. A job is claimed by moving it from the pending list to the processing list. It is retried up to 3 attempts with a short backoff, then marked failed. The worker does not submit applications. Discovery calls the existing ingestion orchestrator, deterministic matcher, and job upsert path. Approve & Submit remains a separate, explicit user action.
+Pending, processing, retry, and failed job state stays in Redis. A job is claimed by moving it from the pending list to the processing list. A temporary failure is retried up to 3 attempts with a short backoff, then marked failed. A missing or unusable candidate fails immediately and does not enqueue the daily report. The worker does not submit applications. Discovery calls the existing ingestion orchestrator, deterministic matcher, and job upsert path. Approve & Submit remains a separate, explicit user action.
 
 ### Configured sources
 

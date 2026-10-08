@@ -101,6 +101,10 @@ describe("configured job discovery", () => {
           return { status: 200 } as Response;
         },
       });
+      assert.equal(result.status, "succeeded");
+      assert.equal(result.candidateLoaded, true);
+      assert.equal(result.unmatched, 0);
+      assert.equal(result.matched, result.persisted);
       assert.equal(result.persisted, 1);
       assert.equal(result.stats.totalInvalid, 1);
       assert.equal(result.stats.totalDuplicates, 1);
@@ -133,7 +137,7 @@ describe("configured job discovery", () => {
         fetcher: async () => response({ jobs: [greenhouseJob] }),
       }),
       repository,
-      candidate: null,
+      candidate,
       validateApplicationUrls: false,
       urlFetcher: async () => {
         urlChecks += 1;
@@ -143,28 +147,42 @@ describe("configured job discovery", () => {
     assert.equal(urlChecks, 0);
   });
 
-  it("reports a missing active candidate instead of inventing match decisions", async () => {
-    const warnings: string[] = [];
-    const original = console.warn;
-    console.warn = (...args: unknown[]) => {
-      warnings.push(args.map((value) => String(value)).join(" "));
-    };
-    try {
-      const result = await runJobDiscovery({
+  it("fails before persistence when no usable candidate is available", async () => {
+    let saved = 0;
+    let fetched = 0;
+    await assert.rejects(
+      () => runJobDiscovery({
         adapters: createJobSourceAdapters([
           { id: "greenhouse", enabled: true, type: "greenhouse", boardToken: "acme", companyName: "Acme" },
         ], {
-          fetcher: async () => response({ jobs: [greenhouseJob] }),
+          fetcher: async () => {
+            fetched += 1;
+            return response({ jobs: [greenhouseJob] });
+          },
         }),
-        repository: { upsert: async () => undefined },
+        repository: { upsert: async () => { saved += 1; } },
         candidate: null,
-      });
-      assert.equal(result.candidateLoaded, false);
-      assert.equal(result.persisted, 1);
-      assert.equal(warnings.some((line) => line.includes("no active candidate profile") && line.includes("unmatched=1")), true);
-    } finally {
-      console.warn = original;
-    }
+      }),
+      /usable active candidate/,
+    );
+    await assert.rejects(
+      () => runJobDiscovery({
+        adapters: [],
+        repository: { upsert: async () => { saved += 1; } },
+        candidate: { ...candidate, isActive: false },
+      }),
+      /usable active candidate/,
+    );
+    await assert.rejects(
+      () => runJobDiscovery({
+        adapters: [],
+        repository: { upsert: async () => { saved += 1; } },
+        candidate: { ...candidate, skills: [], technologies: [], preferredLocations: [], yearsOfExperience: Number.NaN },
+      }),
+      /years of experience/,
+    );
+    assert.equal(saved, 0);
+    assert.equal(fetched, 0);
   });
 
   it("does not write application or submission records", () => {
