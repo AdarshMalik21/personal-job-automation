@@ -6,6 +6,31 @@ export const NAUKRI_SEARCH_URL = "https://www.naukri.com/jobapi/v3/search";
 
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 const TOKEN_STATUS = new Set([403, 406]);
+const TRANSIENT_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "ETIMEDOUT", "EPIPE", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET"]);
+
+export type NaukriHttpAction = "ok" | "refresh-token" | "retry" | "fatal";
+
+export const classifyNaukriHttpStatus = (status: number): NaukriHttpAction => {
+  if (status >= 200 && status < 300) return "ok";
+  if (TOKEN_STATUS.has(status)) return "refresh-token";
+  if (RETRYABLE_STATUS.has(status)) return "retry";
+  return "fatal";
+};
+
+const errorCode = (error: unknown): string | undefined => {
+  if (!error || typeof error !== "object") return undefined;
+  if ("code" in error && typeof error.code === "string") return error.code;
+  if ("cause" in error) return errorCode(error.cause);
+  return undefined;
+};
+
+const isTransient = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "TimeoutError" || error.name === "AbortError") return true;
+  const code = errorCode(error);
+  if (code && TRANSIENT_CODES.has(code)) return true;
+  return /fetch failed|socket hang up|network/i.test(error.message);
+};
 
 export type NaukriSearchInput = {
   keyword: string;
@@ -59,6 +84,8 @@ const isTimeout = (error: unknown): boolean =>
   error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
 
 export class NaukriClient {
+  httpRequests = 0;
+
   constructor(private readonly fetcher: FetchLike = fetch) {}
 
   async search(input: NaukriSearchInput): Promise<NaukriJobRecord[]> {
@@ -83,27 +110,34 @@ export class NaukriClient {
     attempt: number,
     tokenRetried: boolean,
   ): Promise<Response> {
+    this.httpRequests += 1;
     try {
       const response = await this.fetcher(url, {
         headers: headers(),
         signal: signal ?? AbortSignal.timeout(timeoutMs),
       });
       if (response.ok) return response;
-      const retryToken = TOKEN_STATUS.has(response.status) && !tokenRetried;
-      const retryTransient = RETRYABLE_STATUS.has(response.status) && attempt < maxRetries;
+      const action = classifyNaukriHttpStatus(response.status);
+      const retryToken = action === "refresh-token" && !tokenRetried;
+      const retryTransient = action === "retry" && attempt < maxRetries;
       if (retryToken || retryTransient) {
         await new Promise((resolve) => setTimeout(resolve, 200));
-        return this.request(url, timeoutMs, maxRetries, signal, attempt + 1, tokenRetried || TOKEN_STATUS.has(response.status));
+        return this.request(url, timeoutMs, maxRetries, signal, attempt + 1, tokenRetried || action === "refresh-token");
       }
-      throw new NaukriSourceError(`Naukri fetch failed status=${response.status}`, response.status);
+      throw new NaukriSourceError(
+        `Naukri fetch failed status=${response.status}`,
+        response.status,
+        action === "retry" || action === "refresh-token",
+      );
     } catch (error) {
       if (error instanceof NaukriSourceError) throw error;
-      if (isTimeout(error) && attempt < maxRetries) {
+      if (isTransient(error) && attempt < maxRetries) {
         await new Promise((resolve) => setTimeout(resolve, 200));
         return this.request(url, timeoutMs, maxRetries, signal, attempt + 1, tokenRetried);
       }
+      const timedOut = isTimeout(error);
       const message = error instanceof Error ? error.message : "Naukri request failed";
-      throw new NaukriSourceError(isTimeout(error) ? "Naukri request timed out" : message);
+      throw new NaukriSourceError(timedOut ? "Naukri request timed out" : message, undefined, isTransient(error));
     }
   }
 }

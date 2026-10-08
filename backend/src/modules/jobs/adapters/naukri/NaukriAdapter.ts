@@ -1,5 +1,6 @@
-import type { FetchJobsOptions, FetchLike, JobSourceAdapter } from "../JobSourceAdapter.js";
+import type { FetchJobsOptions, FetchLike, JobSourceAdapter, SourceFetchReport, SourceQueryFailure } from "../JobSourceAdapter.js";
 import type { RawJobInput } from "../../types/rawJob.js";
+import { evaluateFreshness } from "../../services/freshness.js";
 import { resolveApplicationDestination } from "./applicationUrl.js";
 import { NaukriClient } from "./NaukriClient.js";
 import { readNaukriConfig, type NaukriConfig } from "./naukriConfig.js";
@@ -17,8 +18,18 @@ const domainOf = (url: string | undefined): string => {
   }
 };
 
+const failureStatuses = (failures: SourceQueryFailure[]): string => {
+  const counts = new Map<string, number>();
+  for (const failure of failures) {
+    const key = failure.status === undefined ? "none" : String(failure.status);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([status, count]) => `${status}:${count}`).join(",") || "none";
+};
+
 export class NaukriAdapter implements JobSourceAdapter {
   readonly source = "naukri" as const;
+  fetchReport: SourceFetchReport | undefined;
   private readonly config: NaukriConfig;
   private readonly client: NaukriClient;
   private readonly fetcher: FetchLike;
@@ -38,14 +49,18 @@ export class NaukriAdapter implements JobSourceAdapter {
 
   async fetchJobs(options: FetchJobsOptions = {}): Promise<RawJobInput[]> {
     const jobs = new Map<string, { raw: RawJobInput; record: NaukriJobRecord }>();
+    const failures: SourceQueryFailure[] = [];
+    let queriesAttempted = 0;
+    let queriesSucceeded = 0;
     let firstRequest = true;
     for (const keyword of this.config.queries) {
       for (const location of this.config.locations) {
         if (!firstRequest && this.config.delayMs > 0) await this.pause(this.config.delayMs);
         firstRequest = false;
-        console.info(`Naukri fetch started query="${keyword}" location="${location}"`);
+        queriesAttempted += 1;
         let collected = 0;
         let pages = 0;
+        let failed = false;
         for (let pageNo = 1; pageNo <= this.config.maxPages && collected < this.config.maxJobsPerQuery; pageNo += 1) {
           if (pageNo > 1 && this.config.delayMs > 0) await this.pause(this.config.delayMs);
           let records: NaukriJobRecord[];
@@ -62,9 +77,20 @@ export class NaukriAdapter implements JobSourceAdapter {
               ...(options.signal ? { signal: options.signal } : {}),
             });
           } catch (error) {
-            const status = error instanceof NaukriSourceError ? error.statusCode : undefined;
-            console.error(`Naukri fetch failed status=${status ?? "error"} query="${keyword}" location="${location}"`);
-            throw error;
+            if (!(error instanceof NaukriSourceError)) throw error;
+            if (!error.retryable && error.statusCode === undefined && !/malformed/i.test(error.message)) throw error;
+            const failure: SourceQueryFailure = {
+              query: keyword,
+              location,
+              page: pageNo,
+              retryable: error.retryable,
+              message: error.message,
+              ...(error.statusCode !== undefined ? { status: error.statusCode } : {}),
+            };
+            failures.push(failure);
+            failed = true;
+            console.error(`Naukri query failed query="${keyword}" location="${location}" page=${pageNo} status=${error.statusCode ?? "error"} retryable=${error.retryable}`);
+            break;
           }
           pages += 1;
           console.info(`Naukri page fetched page=${pageNo} jobs=${records.length}`);
@@ -77,9 +103,29 @@ export class NaukriAdapter implements JobSourceAdapter {
             if (collected >= this.config.maxJobsPerQuery) break;
           }
         }
-        console.info(`Naukri pagination completed pages=${pages} jobs=${collected}`);
-        console.info(`Naukri fetch completed query="${keyword}" jobs=${collected}`);
+        if (!failed) {
+          queriesSucceeded += 1;
+          console.info(`Naukri query completed query="${keyword}" location="${location}" pages=${pages} jobs=${collected}`);
+        }
       }
+    }
+    const report: SourceFetchReport = {
+      queriesAttempted,
+      queriesSucceeded,
+      queriesFailed: failures.length,
+      jobsFetched: jobs.size,
+      requests: this.client.httpRequests,
+      failures,
+    };
+    this.fetchReport = report;
+    console.info(`Naukri discovery completed queriesAttempted=${queriesAttempted} queriesSucceeded=${queriesSucceeded} queriesFailed=${failures.length} jobsFetched=${jobs.size} requests=${report.requests} failureStatuses=${failureStatuses(failures)}`);
+    const blocking = failures.find((failure) => failure.retryable);
+    if (jobs.size === 0 && queriesSucceeded === 0 && blocking) {
+      throw new NaukriSourceError(
+        `Naukri fetch failed status=${blocking.status ?? "error"} query="${blocking.query}" location="${blocking.location}"`,
+        blocking.status,
+        true,
+      );
     }
     return this.attachApplicationUrls([...jobs.values()], options.timeoutMs ?? this.config.timeoutMs);
   }
@@ -90,6 +136,7 @@ export class NaukriAdapter implements JobSourceAdapter {
   ): Promise<RawJobInput[]> {
     const prioritized = [...jobs].sort((left, right) => Number(right.record.companyApplyJob === true) - Number(left.record.companyApplyJob === true));
     let resolved = 0;
+    let skippedStale = 0;
     const limit = this.config.maxUrlResolutions;
     const concurrency = this.config.urlConcurrency;
     let cursor = 0;
@@ -100,7 +147,7 @@ export class NaukriAdapter implements JobSourceAdapter {
         const item = prioritized[index];
         if (!item) return;
         const listing = item.raw.sourceUrl;
-        if (!listing || item.record.companyApplyJob === false || resolved >= limit) {
+        if (!listing || item.record.companyApplyJob === false) {
           item.raw.analysis = {
             ...(item.raw.analysis ?? {}),
             applicationUrlType: item.record.companyApplyJob === false ? "NAUKRI_INTERNAL" : item.raw.analysis?.applicationUrlType ?? "UNKNOWN_EXTERNAL",
@@ -110,6 +157,12 @@ export class NaukriAdapter implements JobSourceAdapter {
           }
           continue;
         }
+        const postedDate = item.raw.postedDate;
+        if (evaluateFreshness(postedDate ? { postedDate } : {}).status === "stale") {
+          skippedStale += 1;
+          continue;
+        }
+        if (resolved >= limit) continue;
         resolved += 1;
         const result = await resolveApplicationDestination(listing, { fetcher: this.fetcher, timeoutMs });
         item.raw.analysis = { ...(item.raw.analysis ?? {}), applicationUrlType: result.type };
@@ -121,6 +174,7 @@ export class NaukriAdapter implements JobSourceAdapter {
       }
     };
     await Promise.all(Array.from({ length: Math.min(concurrency, prioritized.length) }, () => worker()));
+    console.info(`Naukri URL resolution completed resolved=${resolved} skippedStale=${skippedStale}`);
     return prioritized.map((item) => item.raw);
   }
 }

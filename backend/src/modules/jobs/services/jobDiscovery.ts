@@ -102,15 +102,19 @@ export const runJobDiscovery = async (dependencies: DiscoveryDependencies = {}) 
     ...(dependencies.urlFetcher ? { urlFetcher: dependencies.urlFetcher } : {}),
   });
   const succeeded = result.sources.filter((source) => source.status === "success").length;
-  const failed = result.sources.length - succeeded;
+  const partial = result.sources.filter((source) => source.status === "partial").length;
+  const failed = result.sources.filter((source) => source.status === "failed").length;
   for (const source of result.sources) {
     console.info(
       `Job discovery source type=${source.source} status=${source.status} fetched=${source.fetched}${source.error ? ` error=${source.error}` : ""}`,
     );
   }
   console.info(
-    `Job discovery results attempted=${result.sources.length} succeeded=${succeeded} failed=${failed} raw=${result.stats.totalFetched} invalid=${result.stats.totalInvalid} duplicates=${result.stats.totalDuplicates} fresh=${result.stats.totalFresh} stale=${result.stats.totalStale} unknownFreshness=${result.stats.totalUnknownFreshness} urlReachable=${countUrlStatus(result.jobs, "reachable")} urlUnreachable=${countUrlStatus(result.jobs, "unreachable")} urlInvalid=${countUrlStatus(result.jobs, "invalid")} urlUnknown=${countUrlStatus(result.jobs, "unknown")}`,
+    `Job discovery results attempted=${result.sources.length} succeeded=${succeeded} partial=${partial} failed=${failed} raw=${result.stats.totalFetched} invalid=${result.stats.totalInvalid} duplicates=${result.stats.totalDuplicates} fresh=${result.stats.totalFresh} stale=${result.stats.totalStale} unknownFreshness=${result.stats.totalUnknownFreshness} urlReachable=${countUrlStatus(result.jobs, "reachable")} urlUnreachable=${countUrlStatus(result.jobs, "unreachable")} urlInvalid=${countUrlStatus(result.jobs, "invalid")} urlUnknown=${countUrlStatus(result.jobs, "unknown")}`,
   );
+  if (partial > 0 && failed === 0) {
+    console.warn(`Job discovery status=partial attempted=${result.sources.length} succeeded=${succeeded} partial=${partial} failed=${failed}`);
+  }
   if (adapters.length === 0 || failed > 0) {
     const reason = adapters.length === 0
       ? "Job discovery has no configured sources"

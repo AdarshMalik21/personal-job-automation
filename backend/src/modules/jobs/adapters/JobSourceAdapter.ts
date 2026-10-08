@@ -6,9 +6,28 @@ export type FetchJobsOptions = {
   signal?: AbortSignal;
 };
 
+export type SourceQueryFailure = {
+  query: string;
+  location: string;
+  page: number;
+  status?: number;
+  retryable: boolean;
+  message: string;
+};
+
+export type SourceFetchReport = {
+  queriesAttempted: number;
+  queriesSucceeded: number;
+  queriesFailed: number;
+  jobsFetched: number;
+  requests: number;
+  failures: SourceQueryFailure[];
+};
+
 export interface JobSourceAdapter {
   readonly source: JobSource;
   fetchJobs(options?: FetchJobsOptions): Promise<RawJobInput[]>;
+  fetchReport?: SourceFetchReport | undefined;
 }
 
 export type FetchLike = (

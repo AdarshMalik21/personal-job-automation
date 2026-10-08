@@ -26,10 +26,12 @@ export type NaukriSearchResponse = {
 
 export class NaukriSourceError extends Error {
   readonly statusCode?: number;
+  readonly retryable: boolean;
 
-  constructor(message: string, statusCode?: number) {
+  constructor(message: string, statusCode?: number, retryable = false) {
     super(message);
     this.name = "NaukriSourceError";
+    this.retryable = retryable;
     if (statusCode !== undefined) this.statusCode = statusCode;
   }
 }

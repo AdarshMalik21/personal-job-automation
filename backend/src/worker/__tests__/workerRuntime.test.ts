@@ -142,6 +142,64 @@ describe("job discovery worker", () => {
     assert.equal((await commands.due("queue:delayed", Number.MAX_SAFE_INTEGER)).length, 1);
   });
 
+  it("completes discovery and schedules the daily report when Naukri is only partially successful", async () => {
+    const commands = new MemoryQueueCommands();
+    const queue = new JobQueue(commands);
+    let reports = 0;
+    let saved = 0;
+    const handlers = discoveryHandlers(() => runJobDiscovery({
+      adapters: [
+        { source: "greenhouse", fetchJobs: async () => [rawJob()] },
+        {
+          source: "naukri",
+          fetchReport: {
+            queriesAttempted: 2,
+            queriesSucceeded: 1,
+            queriesFailed: 1,
+            jobsFetched: 1,
+            requests: 2,
+            failures: [{
+              query: "React Node Developer",
+              location: "Delhi",
+              page: 1,
+              status: 400,
+              retryable: false,
+              message: "Naukri fetch failed status=400",
+            }],
+          },
+          fetchJobs: async () => [{
+            source: "naukri",
+            externalJobId: "naukri-1",
+            title: "MERN Developer",
+            company: "Radiant Techsolutions",
+            location: "Delhi",
+            description: "Build React and Node services.",
+            sourceUrl: "https://www.naukri.com/job-listings-1",
+            postedDate: "2026-10-01T00:00:00.000Z",
+            requiredSkills: ["javascript", "react", "node.js"],
+            analysis: { applicationUrlType: "NAUKRI_INTERNAL" },
+          }],
+        },
+      ],
+      repository: { upsert: async () => { saved += 1; } },
+      candidate,
+      validateApplicationUrls: false,
+    }), {
+      reserve: (key) => commands.setNx(key, "1"),
+      release: (key) => commands.del(key),
+      enqueue: async (payload) => {
+        reports += 1;
+        return queue.enqueue(DAILY_REPORT, payload);
+      },
+    });
+    const queued = await queue.enqueue(JOB_DISCOVERY, { scheduledFor: "2026-10-08" });
+    const outcome = await processNextJob(queue, handlers);
+    assert.equal(outcome, "completed");
+    assert.equal(saved, 2);
+    assert.equal(reports, 1);
+    assert.equal((await queue.get(queued.id))?.status, "completed");
+  });
+
   it("retries a transient database failure and keeps a candidate failure from retrying", async () => {
     const commands = new MemoryQueueCommands();
     const queue = new JobQueue(commands);

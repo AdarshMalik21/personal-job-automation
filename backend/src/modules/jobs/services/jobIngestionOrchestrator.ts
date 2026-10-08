@@ -1,5 +1,5 @@
 import type { Job, JobSource } from "@personal-job-automation/shared/types";
-import type { JobSourceAdapter } from "../adapters/JobSourceAdapter.js";
+import type { JobSourceAdapter, SourceFetchReport } from "../adapters/JobSourceAdapter.js";
 import { normalizeJob } from "./jobNormalizer.js";
 import { deduplicateJobs, type DeduplicatedJob } from "./deduplicateJobs.js";
 import {
@@ -17,9 +17,20 @@ import {
 
 export type SourceIngestionResult = {
   source: JobSource;
-  status: "success" | "failed";
+  status: "success" | "partial" | "failed";
   fetched: number;
   error?: string;
+  report?: SourceFetchReport;
+};
+
+const reportError = (report: SourceFetchReport): string => {
+  const counts = new Map<string, number>();
+  for (const failure of report.failures) {
+    const key = failure.status === undefined ? "none" : String(failure.status);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const statuses = [...counts.entries()].map(([status, count]) => `${status}:${count}`).join(",");
+  return `queriesFailed=${report.queriesFailed} failureStatuses=${statuses || "none"}`;
 };
 
 export type IngestedJob = DeduplicatedJob & {
@@ -71,10 +82,13 @@ export class JobSourceOrchestrator {
       try {
         const jobs = await adapter.fetchJobs();
         fetchedJobs.push({ source: adapter.source, jobs });
+        const report = adapter.fetchReport;
+        const partial = (report?.queriesFailed ?? 0) > 0;
         sources.push({
           source: adapter.source,
-          status: "success",
+          status: partial ? "partial" : "success",
           fetched: jobs.length,
+          ...(partial && report ? { error: reportError(report), report } : report ? { report } : {}),
         });
       } catch (error) {
         const message =

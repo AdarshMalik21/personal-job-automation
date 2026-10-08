@@ -3,19 +3,12 @@ export const DEFAULT_NAUKRI_QUERIES = [
   "Full Stack Developer",
   "Full Stack Engineer",
   "React Node Developer",
-  "React.js Node.js Developer",
-  "JavaScript Full Stack Developer",
-  "TypeScript Node React Developer",
-  "Node.js Developer",
 ] as const;
 
 export const DEFAULT_NAUKRI_LOCATIONS = [
-  "Delhi",
-  "Noida",
-  "Greater Noida",
-  "Gurgaon",
-  "Gurugram",
   "Delhi NCR",
+  "Noida",
+  "Gurgaon",
   "Remote",
 ] as const;
 
@@ -71,7 +64,7 @@ export const readNaukriConfig = (
     enabled: enabledValue !== "false" && enabledValue !== "0",
     queries: list(source, "NAUKRI_QUERIES", DEFAULT_NAUKRI_QUERIES),
     locations: list(source, "NAUKRI_LOCATIONS", DEFAULT_NAUKRI_LOCATIONS),
-    maxPages: integer(source, "NAUKRI_MAX_PAGES", 5, 1, 20),
+    maxPages: integer(source, "NAUKRI_MAX_PAGES", 3, 1, 20),
     maxJobsPerQuery: integer(source, "NAUKRI_MAX_JOBS_PER_QUERY", 50, 1, 200),
     pageSize: integer(source, "NAUKRI_PAGE_SIZE", 20, 1, 50),
     timeoutMs: integer(source, "NAUKRI_REQUEST_TIMEOUT_MS", 15_000, 1_000, 60_000),
