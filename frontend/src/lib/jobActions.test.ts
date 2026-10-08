@@ -7,6 +7,7 @@ import {
   experienceLabel,
   isRecommended,
   needsReview,
+  recommendedAction,
   recommendedJobs,
   reviewJobs,
 } from "./jobActions.js";
@@ -152,6 +153,21 @@ describe("actionable job selection", () => {
         },
       },
     })), true);
+  });
+
+  it("sends a Naukri-internal job to Naukri instead of browser automation", () => {
+    const internal = job({
+      source: "naukri",
+      officialApplicationUrl: undefined,
+      sourceUrl: "https://www.naukri.com/job-listings-1",
+      analysis: { applicationUrlType: "NAUKRI_INTERNAL" },
+    });
+    assert.equal(isRecommended(internal), true);
+    const action = recommendedAction(internal);
+    assert.equal(action.label, "Apply on Naukri");
+    assert.equal(action.external, true);
+    assert.equal(action.prepare, undefined);
+    assert.equal(recommendedAction(job()).prepare, true);
   });
 
   it("formats experience without internal fields", () => {

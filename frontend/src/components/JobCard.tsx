@@ -78,6 +78,8 @@ export function JobCard({
       {error && <p className="assist-error">{error}</p>}
       {variant === "review" ? (
         <Link className="assist-primary" href={`/jobs/${job.id}`}>Review</Link>
+      ) : action.external && action.href ? (
+        <a className="assist-primary" href={action.href} target="_blank" rel="noreferrer">{action.label}</a>
       ) : action.prepare ? (
         <button className="assist-primary" type="button" onClick={prepare} disabled={busy}>{busy ? "Preparing application..." : retryBrowser ? "Retry Browser Run" : action.label}</button>
       ) : (

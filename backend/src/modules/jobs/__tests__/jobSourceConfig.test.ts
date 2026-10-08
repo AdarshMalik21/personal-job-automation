@@ -83,8 +83,8 @@ describe("job source configuration", () => {
 
   it("builds the initial production sources from Greenhouse, Lever, and Ashby", () => {
     const adapters = createJobSourceAdapters();
-    assert.deepEqual(configuredJobSources.map((source) => source.enabled), [true, true, true, true]);
-    assert.equal(adapters.length, 4);
-    assert.deepEqual(adapters.map((adapter) => adapter.source), ["greenhouse", "greenhouse", "lever", "ashby"]);
+    assert.deepEqual(configuredJobSources.map((source) => source.enabled), [true, true, true, true, true]);
+    assert.equal(adapters.length, 5);
+    assert.deepEqual(adapters.map((adapter) => adapter.source), ["greenhouse", "greenhouse", "lever", "ashby", "naukri"]);
   });
 });

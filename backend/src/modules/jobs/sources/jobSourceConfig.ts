@@ -6,6 +6,8 @@ import {
 import { GreenhouseAdapter } from "../adapters/greenhouse/GreenhouseAdapter.js";
 import type { FetchLike, JobSourceAdapter } from "../adapters/JobSourceAdapter.js";
 import { LeverAdapter } from "../adapters/lever/LeverAdapter.js";
+import { NaukriAdapter } from "../adapters/naukri/NaukriAdapter.js";
+import { readNaukriConfig } from "../adapters/naukri/naukriConfig.js";
 
 export type GreenhouseSourceConfig = {
   id: string;
@@ -31,6 +33,12 @@ export type AshbySourceConfig = {
   companyName: string;
 };
 
+export type NaukriSourceConfig = {
+  id: string;
+  enabled: boolean;
+  type: "naukri";
+};
+
 export type CompanyCareerSourceConfig = {
   id: string;
   enabled: boolean;
@@ -44,7 +52,8 @@ export type JobSourceConfig =
   | GreenhouseSourceConfig
   | LeverSourceConfig
   | AshbySourceConfig
-  | CompanyCareerSourceConfig;
+  | CompanyCareerSourceConfig
+  | NaukriSourceConfig;
 
 /**
  * Public job-board identifiers only. Add another entry to extend discovery.
@@ -79,6 +88,11 @@ export const configuredJobSources: readonly JobSourceConfig[] = [
     companyName: "Linear",
     boardName: "linear",
   },
+  {
+    id: "naukri",
+    enabled: true,
+    type: "naukri",
+  },
 ];
 
 const requireText = (value: string | undefined, label: string): string => {
@@ -111,6 +125,8 @@ export const assertJobSourceConfig = (source: JobSourceConfig): void => {
       if (typeof source.parser !== "function") {
         throw new Error(`Job source configuration is invalid: parser for ${source.id} is required`);
       }
+      return;
+    case "naukri":
       return;
     default: {
       const unknownType = (source as { type?: string }).type ?? "unknown";
@@ -146,6 +162,11 @@ const createAdapter = (source: JobSourceConfig, fetcher: FetchLike | undefined):
         parser: source.parser,
         ...(fetcher ? { fetcher } : {}),
       });
+    case "naukri":
+      return new NaukriAdapter({
+        config: readNaukriConfig(),
+        ...(fetcher ? { fetcher } : {}),
+      });
     default:
       throw new Error("Job source configuration is invalid: unsupported type");
   }
@@ -165,6 +186,7 @@ export const createJobSourceAdapters = (
     }
     seen.add(id);
     if (!source.enabled) continue;
+    if (source.type === "naukri" && !readNaukriConfig().enabled) continue;
     adapters.push(createAdapter(source, options.fetcher));
   }
   return adapters;

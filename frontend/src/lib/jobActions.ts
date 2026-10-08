@@ -28,9 +28,10 @@ export type MatchInconsistency = {
 };
 
 export type JobAction = {
-  label: "Prepare Application" | "Review Application" | "Review" | "Track Application" | "Apply";
+  label: "Prepare Application" | "Review Application" | "Review" | "Track Application" | "Apply" | "Apply on Naukri";
   href?: string;
   prepare?: boolean;
+  external?: boolean;
 };
 
 const scoreOf = (job: DashboardJob) => job.match.matchScore ?? job.match.score ?? 0;
@@ -50,6 +51,14 @@ export const hasHardFilter = (job: DashboardJob): boolean =>
 
 export const isAvailable = (job: DashboardJob): boolean =>
   job.openStatus !== "closed" && job.status !== "closed";
+
+export const applicationDestination = (job: { analysis?: Record<string, unknown> }): string | undefined => {
+  const value = job.analysis?.applicationUrlType;
+  return typeof value === "string" ? value : undefined;
+};
+
+export const naukriInternalApplication = (job: DashboardJob): boolean =>
+  applicationDestination(job) === "NAUKRI_INTERNAL" && Boolean(job.sourceUrl);
 
 export const hasValidApplicationUrl = (job: DashboardJob): boolean => {
   const value = job.officialApplicationUrl?.trim();
@@ -82,11 +91,13 @@ const meetsStatedExperience = (job: DashboardJob): boolean => {
   return true;
 };
 
+const canOpenApplication = (job: DashboardJob) => hasValidApplicationUrl(job) || naukriInternalApplication(job);
+
 export const isRecommended = (job: DashboardJob): boolean =>
   job.match.decision === "APPLY"
   && !hasHardFilter(job)
   && isAvailable(job)
-  && hasValidApplicationUrl(job)
+  && canOpenApplication(job)
   && !FINISHED_APPLICATIONS.has(job.applicationStatus)
   && meetsStatedExperience(job)
   && job.match.locationAnalysis?.status === "compatible"
@@ -96,7 +107,7 @@ export const needsReview = (job: DashboardJob): boolean =>
   job.match.decision === "REVIEW"
   && !hasHardFilter(job)
   && isAvailable(job)
-  && hasValidApplicationUrl(job)
+  && canOpenApplication(job)
   && !FINISHED_APPLICATIONS.has(job.applicationStatus)
   && roleFits(job)
   && locationFits(job)
@@ -245,7 +256,19 @@ const applicationLabels: Record<string, string> = {
 
 export const applicationLabel = (status: string) => applicationLabels[status] ?? "Not applied";
 
+export const applicationDestinationLabel = (job: DashboardJob): string => {
+  const destination = applicationDestination(job);
+  if (destination === "NAUKRI_INTERNAL") return "Apply on Naukri";
+  if (destination === "GREENHOUSE" || destination === "LEVER" || destination === "ASHBY" || destination === "WORKDAY") return "Official company application";
+  if (destination === "COMPANY_CAREER_PAGE") return "Official company page";
+  if (job.officialApplicationUrl) return "Official application page";
+  return "Application link unavailable";
+};
+
 export const recommendedAction = (job: DashboardJob): JobAction => {
+  if (naukriInternalApplication(job)) {
+    return { label: "Apply on Naukri", href: job.sourceUrl, external: true };
+  }
   if (job.applicationStatus === "prepared" || job.applicationStatus === "needs_information" || job.applicationStatus === "ready_for_review") {
     return { label: "Review Application", href: `/jobs/${job.id}/review` };
   }

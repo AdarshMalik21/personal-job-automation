@@ -6,6 +6,7 @@ import { ApplicationPreparationModel } from "../models/ApplicationPreparation.js
 import { CandidateProfileModel } from "../models/CandidateProfile.js";
 import { JobModel } from "../models/Job.js";
 import { errorText } from "../config/redact.js";
+import { browserAutomationAllowed } from "../modules/jobs/services/applicationDestination.js";
 import { activeRuns, browserSessions } from "../modules/applications/browserSession.js";
 import { runApplication, type BrowserRunHooks } from "../modules/applications/applicationRunner.js";
 
@@ -94,6 +95,10 @@ export const browserRun: RequestHandler = async (request, response, next) => {
     const { job, candidate, preparation, application } = await loadPreparation(jobId);
     if (!job) {
       notFound(response, "Job not found");
+      return;
+    }
+    if (!browserAutomationAllowed(job)) {
+      response.status(409).json({ success: false, message: "Apply on Naukri. Browser automation is not used for Naukri applications." });
       return;
     }
     if (!candidate) {

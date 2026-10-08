@@ -17,4 +17,5 @@ export type RawJobInput = {
   officialApplicationUrl?: string;
   postedDate?: string | Date;
   updatedDate?: string | Date;
+  analysis?: Record<string, unknown>;
 };

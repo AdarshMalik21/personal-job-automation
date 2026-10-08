@@ -69,7 +69,7 @@ export const normalizeJob = (rawJob: RawJobInput): Job => {
     status: "discovered",
     canonicalIdentity,
     deduplication: {},
-    analysis: {},
+    analysis: rawJob.analysis ?? {},
     match: {},
   };
 };

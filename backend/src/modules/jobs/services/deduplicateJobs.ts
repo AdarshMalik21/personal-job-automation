@@ -1,4 +1,5 @@
 import type { Job } from "@personal-job-automation/shared/types";
+import { applicationDestinationRank } from "./applicationDestination.js";
 
 export type DeduplicatedJob = {
   job: Job;
@@ -44,12 +45,14 @@ const completeness = (job: Job): number =>
 
 const prefer = (left: Job, right: Job): Job => {
   const leftScore =
+    applicationDestinationRank(left.officialApplicationUrl) +
     (left.officialApplicationUrl ? 1000 : 0) +
     (left.description?.length ?? 0) +
     (left.location ? 100 : 0) +
     completeness(left) +
     confidenceRank[left.canonicalIdentity.confidence] * 10;
   const rightScore =
+    applicationDestinationRank(right.officialApplicationUrl) +
     (right.officialApplicationUrl ? 1000 : 0) +
     (right.description?.length ?? 0) +
     (right.location ? 100 : 0) +

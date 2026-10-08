@@ -7,6 +7,7 @@ import { getJob, prepareApplication, startBrowserRun, type DashboardJob } from "
 import { beginApplicationReview, createRunGuard } from "../../../lib/browserFlow";
 import {
   applicationLabel,
+  applicationDestinationLabel,
   detailAction,
   exclusionReason,
   experienceLabel,
@@ -96,7 +97,8 @@ export default function JobDetailPage() {
           <p className="assist-meta">{postedLabel(job)}</p>
           <p className="assist-status">Status: {applicationLabel(job.applicationStatus)}</p>
         </div>
-        {actionable && <button className="assist-primary" type="button" onClick={run} disabled={busy}>{busy ? "Preparing application..." : retryBrowser ? "Retry Browser Run" : action.label}</button>}
+        {actionable && action.external && action.href ? <a className="assist-primary" href={action.href} target="_blank" rel="noreferrer">{action.label}</a> : null}
+        {actionable && !action.external && <button className="assist-primary" type="button" onClick={run} disabled={busy}>{busy ? "Preparing application..." : retryBrowser ? "Retry Browser Run" : action.label}</button>}
         {actionError && <p className="assist-error">{actionError}</p>}
       </header>
       <section>
@@ -114,6 +116,7 @@ export default function JobDetailPage() {
       <section>
         <h2>Application</h2>
         <p className="assist-status">Status: {applicationLabel(job.applicationStatus)}</p>
+        <p className="assist-status">Application: {applicationDestinationLabel(job)}</p>
       </section>
     </main>
   );
